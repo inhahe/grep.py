@@ -31,13 +31,4 @@ d:\a\bar\baz
 
 `--x_files d:\temp foo bar\baz` will exclude `d:\temp`, `d:\foo`, and `d:\a\bar\baz`.
 
-
-
-
-
-
-
-
-
-
-
+All this in 270 lines of Python.
