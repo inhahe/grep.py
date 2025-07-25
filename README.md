@@ -35,6 +35,8 @@ The way recursion works is, say you do `grep.py -r d:\*.html *.txt *.md -p d:\fo
 It will search `d:\` recursively, but only searching for `*.html`. It will exclude `index.html`.   
 It will search the current directory and `d:\foo\bar` recursively for `*.txt` and `*.md` and will exclude `robots.txt`. 
 
+grep.py will search the current directory by default, but if any paths are specified, it will exclude the current directory (unless the current directory is one of the paths specified).
+
 -----
 
 All this in 270 lines of Python.
