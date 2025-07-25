@@ -12,7 +12,7 @@ My own grep in Python.
   - show only results that don't match
   - show line numbers
   - case-insensitive search
-  - match only up to a certain number of items
+  - match only up to a certain number of lines
   - search directories recursively
   - specify number of lines of context before and after matches, either separately or both at once
 - I've only tested it on Windows, but it *should* work on any OS
