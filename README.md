@@ -18,7 +18,7 @@ Other, standard grep functions it can do are
 - search directories recursively
 - specify number of lines of context before and after matches, either separately or both at once
 
-I've only tested it on Windows, but it *should* work on any OS
+I've only tested it on Windows, but it *should* work on any OS.
 
 If you're on Windows, grep.py will not show color unless you `pip install colorama`.
 
