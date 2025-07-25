@@ -29,6 +29,10 @@ d:\foo
 d:\a\bar\baz
 ```
 
-`--x_files d:\temp foo bar\baz` will exclude `d:\temp`, `d:\foo`, and `d:\a\bar\baz`.
+`--x_files d:\temp foo bar\baz` will exclude `d:\temp`, `d:\foo`, and `d:\a\bar\baz .`.
+
+The way recursion works is, say you do `grep.py -r d:\*.html *.txt *.md -p d:\foo\bar --x_files robots.txt `index.html`  
+It will search d:\ recursively, but only searching for `*.html`. It will exclude `index.html`.   
+It will search the current directory and `d:\foo\bar` recursively for `*.txt` and `*.md` and will exclude `robots.txt`. 
 
 All this in 270 lines of Python.
