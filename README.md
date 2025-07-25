@@ -5,11 +5,10 @@ My own grep in Python.
 - Can specify a list of paths to search
 - Can specify a list of paths to exclude from search
 - Can make filename matching case-sensitive even on OSs where that's not the standard
-- Can specify number of lines of context before and after matches
 - Has colorized output
 - Can disable color or set your own colors, and it will remember what you set. Can also reset colors to their defaults
 - Can make "." match newlines
-- Other standard grep functions it can do are show only results that don't match, show line numbers, case-insensitive search, match only up to a certain number of items, and search directories recursively
+- Other standard grep functions it can do are show only results that don't match, show line numbers, case-insensitive search, match only up to a certain number of items, search directories recursively, and specify number of lines of context before and after matches
 - I've only tested it on Windows, but it *should* work on any OS
 
 If you're on Windows, grep.py will not show color unless you `pip install colorama`.
