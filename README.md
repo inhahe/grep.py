@@ -10,7 +10,8 @@ My own grep in Python.
 - Can make "." match newlines
 
 Other, standard grep functions it can do are
-- show only results that don't match
+- show only files that don't match
+- show only matching filenames
 - show line numbers
 - case-insensitive search
 - match only up to a certain number of lines
@@ -27,6 +28,7 @@ d:\foo
 d:\a\bar\baz
 
 `--x_files d:\temp foo bar\baz` will exclude d:\temp, d:\foo, and d:\a\bar\baz.
+
 
 
 
