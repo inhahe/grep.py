@@ -11,7 +11,7 @@ My own grep in Python.
 
 Other, standard grep functions it can do are
 - show only files that don't match
-- show only matching filenames
+- show only matching files, no match text
 - show line numbers
 - case-insensitive search
 - match only up to a certain number of lines
