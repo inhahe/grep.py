@@ -23,11 +23,13 @@ I've only tested it on Windows, but it *should* work on any OS
 If you're on Windows, grep.py will not show color unless you `pip install colorama`.
 
 The way path exclusion works, say your search criteria includes these directories:  
+```
 d:\temp  
 d:\foo   
-d:\a\bar\baz  
+d:\a\bar\baz
+```
 
-`--x_files d:\temp foo bar\baz` will exclude d:\temp, d:\foo, and d:\a\bar\baz.
+`--x_files d:\temp foo bar\baz` will exclude `d:\temp`, `d:\foo`, and `d:\a\bar\baz`.
 
 
 
