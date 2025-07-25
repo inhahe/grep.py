@@ -8,13 +8,14 @@ My own grep in Python.
 - Has colorized output
 - Can disable color or set your own colors, and it will remember what you set. Can also reset colors to their defaults
 - Can make "." match newlines
-- Other standard grep functions it can do are
-  - show only results that don't match
-  - show line numbers
-  - case-insensitive search
-  - match only up to a certain number of lines
-  - search directories recursively
-  - specify number of lines of context before and after matches, either separately or both at once
+
+Other, standard grep functions it can do are
+- show only results that don't match
+- show line numbers
+- case-insensitive search
+- match only up to a certain number of lines
+- search directories recursively
+- specify number of lines of context before and after matches, either separately or both at once
 
 I've only tested it on Windows, but it *should* work on any OS
 
