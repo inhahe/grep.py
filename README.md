@@ -39,4 +39,4 @@ grep.py will search the current directory by default, but if any paths are speci
 
 -----
 
-All this in 278 lines of Python.
+All this in ~300 lines of Python.
