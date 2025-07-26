@@ -16,6 +16,7 @@ Other, standard grep functions it can do are
 - case-insensitive search
 - match only up to a certain number of lines
 - search directories recursively
+- search directories recursively ignoring symlinked directories
 - specify number of lines of context before and after matches, either separately or both at once
 
 I've only tested it on Windows, but it *should* work on any OS.
