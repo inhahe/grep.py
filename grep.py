@@ -13,16 +13,26 @@
 #add parameter for max_outofmemory?
 #test out-of-memory conditions
 #why does `grep.py --s` with anything directory following the s not generate an error? seems like a bug in argparse.
+#options to exclude simlink files and/or simlink directories? gnu grep lets you do that and include symlink dirs that are on the command line.
+#detect circular recursion by checking inodes?
+#use os.scandir instead? it's faster because it uses a cache, but i'd have to figure out how to extract the filenames. it returns DirEntry objects.
+# also, if it uses a cache, could some files be missing from the scan? texnickal texnical said yes.
+# apparently i could use os.walk and not search certain directories because "<TeXNickAL> (You're allowed to alter the list of son-nodes it returns at each step.)"
+#  “When topdown is True, the caller can modify the dirnames list in-place (perhaps using del or slice assignment), and walk() will only recurse into the subdirectories whose names remain in dirnames”
+#  but os.walk uses scandir
+#  os.walk has a follow_symlinks option
+#issue: grep.py -R temp will show not only the symlinked dir temp but also teh symlinked dir temp\temp
 
-import os, re, argparse, fnmatch, sys, pathlib
-from pathlib import PurePath
+import os, re, argparse, fnmatch, sys
 from collections import deque
+from pathlib import PurePath
 
 parser = argparse.ArgumentParser()
 parser.add_argument("regex", nargs="?", help="regular expression pattern to search for")
 parser.add_argument("files", nargs="*", help="search files matching these filename patterns")
 parser.add_argument("-f", nargs="*", help="search files matching these filename patterns. this option exists so you can search files even if you don't specify a regex")
-parser.add_argument("-r", action="store_true", help="search directories recursively")
+parser.add_argument("-R", action="store_true", help="search directories recursively")
+parser.add_argument("-r", action="store_true", help="search directories recursively, ignoring symlinks unless they're explicitly included")
 parser.add_argument("-p", nargs="*", metavar="path", help="search these paths")
 parser.add_argument("--x_files", nargs="*", metavar = "filespec", help="exclude these filename patterns from search")
 parser.add_argument("--x_paths", nargs="*", metavar = "path", help="exclude these paths from search")
@@ -58,7 +68,7 @@ if args.no_color:
   cf = os.path.join(d, "grep.py.colors.conf")
   open(cf, "w").write("default default default default default")
   
-if os.name=="nt":
+if use_colors and os.name=="nt":
   try:
     from colorama import just_fix_windows_console
     just_fix_windows_console()
@@ -106,7 +116,7 @@ if args.context:
   before_context = after_context = args.context or 0
 
 params = []
-if args.dotall: 
+if args.dotall:  
   params.append(re.DOTALL)
 if args.i:
   params.append(re.I)
@@ -118,9 +128,9 @@ if args.regex:
     print(f"{errcolor}Regex pattern error: {normalcolor}{', '.join(e.args)}")
     sys.exit()
 
-i_paths = args.p or None
+i_paths = args.p or []
 if not args.p:
-  if len(args.files)==1 and args.r:
+  if len(args.files)==1 and args.r or args.R:
     p, fn = os.path.split(args.files[0])
     i_paths = [p]
     i_files = [fn]
@@ -128,7 +138,7 @@ if not args.p:
     i_paths = ["."]
 
 i_files = (((args.files or []) + (args.f or []))) or ["*"]
-x_paths = [PurePath(p).parts for p in args.x_paths] if args.x_paths else []
+x_paths = [list(PurePath(p).parts) for p in args.x_paths] if args.x_paths else []
 x_files = args.x_files or []
 
 lines_since_match = before_context + after_context + 1
@@ -149,15 +159,16 @@ def ld(directory):
     else:
       return r
 
-def walk(directory, exclude=[]):
-  for fn in ld(directory):
+def walk(directory, parts, exclude=[], ignore_symlinks=False, include_symlinks=[]):
+  for fn in ld(directory): #todo: we should recursively pass the current parts list instead of using PurePath(p).parts for every p
     p = os.path.join(directory, fn)
     if os.path.isfile(p):
       yield (p, fn)
     elif os.path.isdir(p):
-      print(PurePath(p).parts)
-      if not any(PurePath.parts(p)[-len(x):] in x for x in exclude): #this is really dirty but i don't know of a better solution do excludes how I want
-        yield from walk(p, exclude)
+      parts2 = parts+[fn]
+      if not (ignore_symlinks and os.path.islink(p) and not any(parts2[-len(x):] == x for x in include_symlinks)): #todo: is this right?
+        if not any(parts2[-len(x):] == x for x in exclude): #this is really dirty but i don't know of a better solution do excludes how I want
+          yield from walk(p, parts2, exclude, ignore_symlinks, include_symlinks)
 
 def prn(p, ln=None, s=None):
   if not s:
@@ -199,10 +210,12 @@ def process(p):
               m = regexc.search(line)
               if m:
                 break
-            if (not m) and args.negate:
-              prn(p)
+            if m:
+              if args.l:
+                prn(p)
             else:
-              prn(p)
+              if args.negate:
+                prn(p)
           except MemoryError:
             print("f{errcolor}out of memory: {normalcolor}{p}")
         else:
@@ -268,9 +281,9 @@ def process(p):
   s.add(p)
 
 #n and n2 slightly slow down operations by making some things iterate over a list with one value 
-def n(p, fn, i_p, i_f):
+def n(p, fn, i_p, i_f, ignore_symlinks=False, include_symlinks=[]):
   for path in i_p:
-    for p, fn in walk(path, x_paths):
+    for p, fn in walk(path, [path], x_paths, ignore_symlinks):
       if any(fnmatch(fn, pat) for pat in i_f) and not any(fnmatch(fn, pat) for pat in x_files):
         process(p)
 
@@ -279,23 +292,25 @@ def n2(p, i_f):
     if any(fnmatch(fn, pat) for pat in i_f) and not any(fnmatch(fn, pat) for pat in x_files):
       if p:
         p2 = os.path.join(p, fn)
+      else:
+        p2 = fn #is this right?
       if os.path.isfile(p2): 
         process(p2)
 
 s = set()
 if not args.regex:
-  if not (args.p or args.x_files or args.x_paths or args.files or args.f or args.l):
+  if not (args.p or args.x_files or args.x_paths or args.files or args.f or args.l or args.r or args.R):
     quit()
 
-try: #can we make this code even less redundant?
-  if args.r:
+try: 
+  if args.r or args.R:
     for pf in i_files:
       p, spec = os.path.split(pf)
       if p:
-        n(p, spec, [p], [spec])
+        n(p, spec, [p], [spec], ignore_symlinks=args.r, include_symlinks=[p]+i_paths)
       else:
-        n(p, spec, i_paths or ["."], i_files)
-  else:
+        n(p, spec, i_paths or ["."], i_files, ignore_symlinks=args.r, include_symlinks=i_paths)
+  else: #can we make the following code simpler?
     if i_paths:
       for spec in i_files:
         p, fspec = os.path.split(spec)
