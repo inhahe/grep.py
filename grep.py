@@ -8,7 +8,6 @@
 #distinguish between file names and directory names in error messages?
 #--x_files * once gave "permission denied:" with no file name
 #filter out terminal escape sequences (are they all below 32?) in match text. filtered out <32 but it still messes up the terminal.
-#should --no-color remember the setting like --set-colors does?
 #should we be nice to the users and change --x_paths and --x_files to --x-paths and --x-files?
 #why is listing d:\ so slow even without a regex?
 #add parameter for max_outofmemory?
