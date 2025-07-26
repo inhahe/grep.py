@@ -11,6 +11,9 @@
 #should --no-color remember the setting like --set-colors does?
 #should we be nice to the users and change --x_paths and --x_files to --x-paths and --x-files?
 #why is listing d:\ so slow even without a regex?
+#add parameter for max_outofmemory?
+#test out-of-memory conditions
+#why does `grep.py --s` with anything directory following the s not generate an error? seems like a bug in argparse.
 
 import os, re, argparse, fnmatch, sys, pathlib
 from pathlib import PurePath
@@ -34,12 +37,14 @@ parser.add_argument("-m", "--max-count", type=int, metavar="num", help="maximum 
 parser.add_argument("-L", "--negate", action="store_true", help="show only files that contain no match")
 parser.add_argument("-l", action="store_true", help="show only filenames")
 parser.add_argument("-n", "--line_numbers", action="store_true", help="show line numbers")
-parser.add_argument("--no-color", action="store_true", help="disable colorized output")
+parser.add_argument("--no-color", action="store_true", help="disable colorized output. grep.py will remember this setting in the future")
 parser.add_argument("--set-colors", nargs="*", metavar="color", help="provide five color names to set the colors of filenames, colons, line numbers, match contents, and error messages to.\n"
                     "options are black, darkred, darkgreen, darkyellow, darkblue, darkmagenta, darkcyan, lightgray,  gray, red, green, yellow, blue, magenta, cyan, and white.\n"
                     "grep.py will remember the color settings in the future.\n"
                     "--set-colors with no options to restore colors to their defaults")
 
+max_outofmemory = 5
+ 
 if len(sys.argv) == 1:
   parser.print_help()
   sys.exit()
@@ -48,6 +53,12 @@ args = parser.parse_args()
 filteresc = re.compile(r"[\0-\32]")
 
 use_colors = not args.no_color
+
+if args.no_color:
+  d = os.path.dirname(os.path.abspath(__file__))
+  cf = os.path.join(d, "grep.py.colors.conf")
+  open(cf, "w").write("default default default default default")
+  
 if os.name=="nt":
   try:
     from colorama import just_fix_windows_console
@@ -59,7 +70,7 @@ if os.name=="nt":
 
 if use_colors:
   colors = dict(zip("black, darkred, darkgreen, darkyellow, darkblue, darkmagenta, darkcyan, lightgray, gray, red, green, yellow, blue, magenta, cyan, white, default".split(", "), 
-                     list(f"\033[{x}m" for x in range(30, 38)) + list(f"\033[1;{x}m" for x in range(30, 38))+["\033[0m"]))
+                     list(f"\033[0;{x}m" for x in range(30, 38)) + list(f"\033[1;{x}m" for x in range(30, 38))+["\033[0m"]))
 else:
   colors = dict(zip("black, darkred, darkgreen, darkyellow, darkblue, darkmagenta, darkcyan, lightgray, gray, red, green, yellow, blue, magenta, cyan, white, default".split(", "), 
                      [""]*17))
@@ -124,7 +135,6 @@ x_files = args.x_files or []
 lines_since_match = before_context + after_context + 1
 
 def ld(directory):
-  #directory = directory or "."
   if not os.path.exists(directory):
     print(f"{errcolor}directory doesn't exist: {normalcolor}{directory}")
     return []
@@ -155,7 +165,7 @@ def prn(p, ln=None, s=None):
     print(f"{normalcolor}{p}")
   else:
     s2 = s.decode("utf-8", errors="ignore").rstrip()
-    #s2 = filteresc.sub("", s2) #escape sequences still mess up the terminal. how is that? 
+    s2 = filteresc.sub("", s2) #escape sequences still mess up the terminal. how is that? 
     p = p.removeprefix(".\\")
     if ln:
       print(f"{fncolor}{p}{coloncolor}:{lncolor}{ln}{coloncolor}:{normalcolor}{s2}")
@@ -166,7 +176,7 @@ def decode(s):
   return s.decode("utf-8", errors="ignore").rstrip()    
 
 def process(p):
-  global printing_context, lines_since_match, tracking_context
+  global printing_context, lines_since_match, tracking_context, s
   lines_since_match = before_context + after_context + 1
   matched_one = False
   context_buffer = deque([None]*(max(before_context, after_context)+1))
@@ -184,59 +194,78 @@ def process(p):
     else:
       if not args.dotall:
         if args.l or args.negate:
-          for line in inf:
-            if regexc.search(line):
-              if not args.negate: 
-                prn(p)
-              break
-          else:
-            if args.negate:
-              prn(p)
-        else:
-          num_matches = 0
-          for line in inf:
-            line_number += 1
-            m = regexc.search(line)
-            if m:
-              num_matches += 1
-              if args.max_count is not None and num_matches > args.max_count:
-                break
-            if before_context or after_context:
-              lines_since_match += 1
-              context_buffer.popleft()
-              context_buffer.append(line)
-              if m: 
-                if lines_since_match > before_context + after_context:
-                  if matched_one: #if I weren't retarded, I could based this on lines_since_matched, before_context and after_context alone.
-                    print("--")
-                  for l in list(context_buffer)[-before_context-1:]:                 
-                    if l: 
-                      prn(p, line_number, l)
-                elif after_context < lines_since_match <= after_context + before_context:
-                  for l in list(context_buffer)[-(lines_since_match-after_context):]:                 
-                    if l:  
-                      prn(p, line_number, l)
-                else:
-                  prn(p, line_number, l)
-                lines_since_match = 0
-                matched_one = True
-              else:
-                if lines_since_match <= after_context:
-                  prn(p, line_number, line)
-            else:
+          try: 
+            m = False
+            for line in inf:
+              m = regexc.search(line)
               if m:
-                prn(p, line_number, line)
-      else:
-        data = inf.read()
-        if args.negate:
-          if not regexc.search(data):
-            prn(p)
-        elif args.l:
-          if regexc.search(data):
-            prn(p)
+                break
+            if (not m) and args.negate:
+              prn(p)
+            else:
+              prn(p)
+          except MemoryError:
+            print("f{errcolor}out of memory: {normalcolor}{p}")
         else:
-          for x in regexc.findall(data):
-            prn(p, None, x)
+          outofmemory = 0
+          num_matches = 0
+          while True:
+            try:
+              line_number += 1
+              line = inf.readline()
+              if not line:
+                break
+              m = regexc.search(line)
+              if m:
+                num_matches += 1
+                if args.max_count is not None and num_matches > args.max_count:
+                  break
+              if before_context or after_context:
+                lines_since_match += 1
+                context_buffer.popleft()
+                context_buffer.append(line)
+                if m: 
+                  if lines_since_match > before_context + after_context:
+                    if matched_one: #if I weren't retarded, I could based this on lines_since_matched, before_context and after_context alone.
+                      print("--")
+                    for l in list(context_buffer)[-before_context-1:]:                 
+                      if l: 
+                        prn(p, line_number, l)
+                  elif after_context < lines_since_match <= after_context + before_context:
+                    for l in list(context_buffer)[-(lines_since_match-after_context):]:                 
+                      if l:  
+                        prn(p, line_number, l)
+                  else:
+                    prn(p, line_number, l)
+                  lines_since_match = 0
+                  matched_one = True
+                else:
+                  if lines_since_match <= after_context:
+                    prn(p, line_number, line)
+              else:
+                if m:
+                  prn(p, line_number, line)
+            except MemoryError:
+              outofmemory += 1 
+              if outofmemory <= max_outofmemory:
+                print("f{errcolor}out of memory on line {lncolor}line_number{errcolor}: {normalcolor}{p}")
+              elif outofmemory == max_outofmemory+1:
+                print("f{errcolor}max out-of-memory notifications exceeded for file: {normalcolor}{p}")
+      else:
+        try: 
+          data = inf.read()
+        except MemoryError:
+          print("f{errcolor}out of memory: {normalcolor}{p}")
+        else:
+          if args.negate:
+            if not regexc.search(data):
+              prn(p)
+          elif args.l:
+            if regexc.search(data):
+              prn(p)
+          else:
+            for x in regexc.findall(data):
+              prn(p, None, x)
   s.add(p)
 
 #n and n2 slightly slow down operations by making some things iterate over a list with one value 
@@ -256,7 +285,7 @@ def n2(p, i_f):
 
 s = set()
 if not args.regex:
-  if not (args.p or args.x_files or args.x_paths or args.files or args.f):
+  if not (args.p or args.x_files or args.x_paths or args.files or args.f or args.l):
     quit()
 
 try: #can we make this code even less redundant?
