@@ -1,19 +1,16 @@
 #todo: 
 #take care of the abuse of global variables?
 #add an option for multiline?
-#put this on github
 #i once got an invalid character error at an f-string line, wtf
 #showing match results from binary files is problematic. it looks really messy, the lines tend to be really long, and it can do weird things to the terminal.
 #showing multiline output with --dotall is ugly, since the first line isn't aligned with the next lines.
 #grep.exe automatically detects binary files and just reports whether they match or not. 
 #distinguish between file names and directory names in error messages?
-#why is using it without a regex so slow? grep.py -p temp d:\ 
-#`grep.py -p \ -r -x_paths $RECYCLE.BIN` doesn't work, it shows all its files
 #--x_files * once gave "permission denied:" with no file name
 #filter out terminal escape sequences (are they all below 32?) in match text. filtered out <32 but it still messes up the terminal.
 #should --no-color remember the setting like --set-colors does?
 #should we be nice to the users and change --x_paths and --x_files to --x-paths and --x-files?
-#provide a way to specify filespecs without a regex
+#why is listing d:\ so slow even without a regex?
 
 import os, re, argparse, fnmatch, sys, pathlib
 from pathlib import PurePath
@@ -78,12 +75,12 @@ if args.set_colors:
     quit()
   else:
     open(cf, "w").write(" ".join(args.set_colors))  
-    fncolor, coloncolor, lncolor, matchcolor, errcolor = (colors.get(x, colors["default"]) for x in args.set_colors)
+    fncolor, coloncolor, lncolor, normalcolor, errcolor = (colors.get(x, colors["default"]) for x in args.set_colors)
 else:
   if os.path.isfile(cf):
-    fncolor, coloncolor, lncolor, matchcolor, errcolor = (colors.get(x, colors["default"]) for x in open(cf).read().split())
+    fncolor, coloncolor, lncolor, normalcolor, errcolor = (colors.get(x, colors["default"]) for x in open(cf).read().split())
   else:
-    fncolor, coloncolor, lncolor, matchcolor, errcolor = colors["green"], colors["gray"], colors["red"], colors["default"], colors["red"]
+    fncolor, coloncolor, lncolor, normalcolor, errcolor = colors["green"], colors["gray"], colors["red"], colors["default"], colors["red"]
             
 if args.c:
   from fnmatch import fnmatchcase as fnmatch
@@ -108,7 +105,7 @@ if args.regex:
   try:
     regexc = re.compile(args.regex.encode("utf-8"), *params)
   except re.PatternError as e:
-    print(f"{errcolor}Regex pattern error: {matchcolor}{', '.join(e.args)}")
+    print(f"{errcolor}Regex pattern error: {normalcolor}{', '.join(e.args)}")
     sys.exit()
 
 i_paths = args.p or None
@@ -120,25 +117,25 @@ if not args.p:
   if i_paths == [""]: 
     i_paths = ["."]
 
-i_files = ((args.files or []) + (args.p or [])) or ["*"]
+i_files = (((args.files or []) + (args.f or []))) or ["*"]
 x_paths = [PurePath(p).parts for p in args.x_paths] if args.x_paths else []
 x_files = args.x_files or []
 
 lines_since_match = before_context + after_context + 1
 
 def ld(directory):
-  directory = directory or "."
+  #directory = directory or "."
   if not os.path.exists(directory):
-    print(f"{errcolor}error: {fncolor}{directory} {matchcolor} doesn't exist.")
+    print(f"{errcolor}directory doesn't exist: {normalcolor}{directory}")
     return []
   elif not os.path.isdir(directory):
-    print(f"{errcolor}error: {fncolor}{directory} {matchcolor}isn't a directory.")
+    print(f"{errcolor}is not a directory: {normalcolor}{directory}")
     return []
   else:
     try:
       r = os.listdir(directory)
     except (PermissionError, IOError) as e:
-      print(f"{errcolor}{'permission denied' if type(e) is PermissionError else 'i/o error'}: {matchcolor}{p}")
+      print(f"{errcolor}{'permission denied' if type(e) is PermissionError else 'i/o error'}: {normalcolor}{p}")
       return []
     else:
       return r
@@ -155,15 +152,15 @@ def walk(directory, exclude=[]):
 
 def prn(p, ln=None, s=None):
   if not s:
-    print(f"{matchcolor}{p}")
+    print(f"{normalcolor}{p}")
   else:
     s2 = s.decode("utf-8", errors="ignore").rstrip()
     #s2 = filteresc.sub("", s2) #escape sequences still mess up the terminal. how is that? 
     p = p.removeprefix(".\\")
     if ln:
-      print(f"{fncolor}{p}{coloncolor}:{lncolor}{ln}{coloncolor}:{matchcolor}{s2}")
+      print(f"{fncolor}{p}{coloncolor}:{lncolor}{ln}{coloncolor}:{normalcolor}{s2}")
     else:
-      print(f"{fncolor}{p}{coloncolor}:{matchcolor}{s2}")
+      print(f"{fncolor}{p}{coloncolor}:{normalcolor}{s2}")
 
 def decode(s):
   return s.decode("utf-8", errors="ignore").rstrip()    
@@ -183,7 +180,7 @@ def process(p):
     try:
       inf = open(p, "rb")
     except (PermissionError, IOError) as e:
-      print(f"{errcolor}{'permission denied' if type(e) is PermissionError else 'i/o error'}: {matchcolor}{p}")
+      print(f"{errcolor}{'permission denied' if type(e) is PermissionError else 'i/o error'}: {normalcolor}{p}")
     else:
       if not args.dotall:
         if args.l or args.negate:
@@ -250,7 +247,7 @@ def n(p, fn, i_p, i_f):
         process(p)
 
 def n2(p, i_f):
-  for fn in ld(None if p=="." else p):
+  for fn in ld(p):
     if any(fnmatch(fn, pat) for pat in i_f) and not any(fnmatch(fn, pat) for pat in x_files):
       if p:
         p2 = os.path.join(p, fn)
