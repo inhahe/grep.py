@@ -32,7 +32,7 @@ parser.add_argument("regex", nargs="?", help="regular expression pattern to sear
 parser.add_argument("files", nargs="*", help="search files matching these filename patterns")
 parser.add_argument("-f", nargs="*", help="search files matching these filename patterns. this option exists so you can search files even if you don't specify a regex")
 parser.add_argument("-R", action="store_true", help="search directories recursively")
-parser.add_argument("-r", action="store_true", help="search directories recursively, ignoring symlinks unless they're explicitly included")
+parser.add_argument("-r", action="store_true", help="search directories recursively, ignoring symlinked directories unless they're explicitly included")
 parser.add_argument("-p", nargs="*", metavar="path", help="search these paths")
 parser.add_argument("--x_files", nargs="*", metavar = "filespec", help="exclude these filename patterns from search")
 parser.add_argument("--x_paths", nargs="*", metavar = "path", help="exclude these paths from search")
