@@ -31,6 +31,8 @@ d:\a\bar\baz
 
 `--x_files d:\temp foo bar\baz` will exclude `d:\temp`, `d:\foo`, and `d:\a\bar\baz`.
 
+Similarly, `-R` (excludes symlinks except those explicitly included) with `-p baz` will include `d:\a\bar\baz` even if it's a symlink, for better or worse.
+
 The way recursion works is, say you do `grep.py -r d:\*.html *.txt *.md -p d:\foo\bar --x_files robots.txt index.html`  
 It will search `d:\` recursively, but only searching for `*.html`. It will exclude `index.html`.   
 It will search the current directory and `d:\foo\bar` recursively for `*.txt` and `*.md` and will exclude `robots.txt`. 
