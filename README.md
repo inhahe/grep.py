@@ -29,7 +29,7 @@ d:\foo
 d:\a\bar\baz
 ```
 
-`--x_files d:\temp foo bar\baz` will exclude `d:\temp`, `d:\foo`, and `d:\a\bar\baz`, assuming none of them are symlinks if you're using `-r`
+`--x_files d:\temp foo bar\baz` will exclude `d:\temp`, `d:\foo`, and `d:\a\bar\baz`
 
 Similarly, `-R` (excludes symlinks except those explicitly included) with `-p baz` will include `a\bar\baz` if you're searching from `a` even if `a\bar\baz` is a symlink, for better or worse.
 
