@@ -22,14 +22,14 @@ I've only tested it on Windows, but it *should* work on any OS.
 
 If you're on Windows, grep.py will not show color unless you `pip install colorama`.
 
-The way path exclusion works, say your search criteria includes these directories:  
+The way path exclusion works, say your search criteria includes these directories, probably because you're using `-r` or `-R`
 ```
 d:\temp  
 d:\foo   
 d:\a\bar\baz
 ```
 
-`-r --x_files d:\temp foo bar\baz` will exclude `d:\temp`, `d:\foo`, and `d:\a\bar\baz`, assuming none of them are symlinks.
+`--x_files d:\temp foo bar\baz` will exclude `d:\temp`, `d:\foo`, and `d:\a\bar\baz`, assuming none of them are symlinks if you're using `-r`
 
 Similarly, `-R` (excludes symlinks except those explicitly included) with `-p baz` will include `a\bar\baz` if you're searching from `a` even if `a\bar\baz` is a symlink, for better or worse.
 
