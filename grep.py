@@ -30,6 +30,7 @@
 #would it be better to remove the spaces after colors after error messages?
 #no-color automatically saving the setting might be annoying to users who are using --no-color just to output to a file...
 #replace [\x00-\x1f] with their \x codes instead of just filtering them out?
+# colorify the replacements?
 #detect invalid filespec before even searching anything and quit?
 
 from ast import Pass
