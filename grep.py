@@ -113,7 +113,7 @@ if args.set_colors == []:
 if args.set_colors:
   colors = yescolors
   if len(args.set_colors) != 6:
-    print(f"{errcolor}error: {normalcolor}wrong number of colors")
+    print(f"{errcolor}error: {normalcolor}wrong number of colors{colors['default']}")
     quit()
   else:
     fncolor, coloncolor, lncolor, normalcolor, errcolor, esccolor = (colors.get(x, colors["default"]) for x in args.set_colors)
@@ -158,7 +158,7 @@ if args.regex:
   try:
     regexc = re.compile(args.regex.encode("utf-8"), *params)
   except re.PatternError as e:
-    print(f"{errcolor}Regex pattern error: {normalcolor}{', '.join(e.args)}")
+    print(f"{errcolor}Regex pattern error: {normalcolor}{', '.join(e.args)}{colors['default']}")
     sys.exit()
 
 i_paths = args.p or ["."]
@@ -382,5 +382,5 @@ except KeyboardInterrupt:
   print(f"{colors['magenta']}^C")
 if error_printing:
   print()
-  print(f"{normalcolor}There were errors printing results. `set PYTHONUTF8=1` to resolve this.") 
+  print(f"{normalcolor}There were errors printing results. `set PYTHONUTF8=1` to resolve this.{colors['default']}") 
 print(colors["default"], end="")
