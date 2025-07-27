@@ -12,13 +12,14 @@
 #detect circular recursion by checking inodes
 #use os.scandir instead? it's faster because it uses a cache, but i'd have to figure out how to extract the filenames. 
 # it returns DirEntry objects.
-# also, if it uses a cache, could some files be missing from the scan? texnickal texnical said yes.
+# also, if it uses a cache, could some files be missing from the scan? texnickal said yes.
 # apparently i could use os.walk and not search certain directories because 
 # "<TeXNickAL> (You're allowed to alter the list of son-nodes it returns at each step.)"
 #  “When topdown is True, the caller can modify the dirnames list in-place (perhaps using del or slice assignment), 
 #  and walk() will only recurse into the subdirectories whose names remain in dirnames”
 #  but os.walk uses scandir
 #  os.walk has a follow_symlinks option
+#  but i'm not sure we could do that with explicitly included symlinks
 #issue: grep.py -R temp will show not only the symlinked dir temp but also teh symlinked dir temp\temp
 #add sanity check to make sure user doesn't use -r AND -R?
 #find out the long parameter names for -r and -R
@@ -31,7 +32,6 @@
 #would it be better to remove the spaces after colons after error messages?
 #no-color automatically saving the setting might be annoying to users who are using --no-color just to output to a file...
 
-from ast import Pass
 import os, re, argparse, fnmatch, sys
 from collections import deque
 from pathlib import PurePath
