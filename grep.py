@@ -88,13 +88,15 @@ if args.no_color:
     try:
        open(cf, "w").write("")
     except (PermissionError, IOError) as e: 
-      print(f'{"permission error" if type(e) is PermissionError else "i/o error"}: could not open colors file "{cf}"{colors['default']}')    
+      print(f'{"permission error" if type(e) is PermissionError else "i/o error"}: could not write to colors file "{cf}"{colors["default"]}')    
+      print()
 else:
   if os.path.isfile(cf):
     try:
       readcolors = open(cf).read().split()
     except (PermissionError, IOError) as e: 
-      print(f'{colors["red"]}{"permission error" if type(e) is PermissionError else "i/o error"}: {colors["default"]}could not open colors file "{cf}"') 
+      print(f'{colors["red"]}{"permission error" if type(e) is PermissionError else "i/o error"}: {colors["default"]}could not read from colors file "{cf}"') 
+      print()
     else:
       if not readcolors:
         use_colors = False
@@ -125,7 +127,8 @@ if args.set_colors:
       try:
         open(cf, "w").write(" ".join(args.set_colors))
       except (PermissionError, IOError) as e: 
-        print(f'{errcolor}{"permission error" if type(e) is PermissionError else "i/o error"}: {normalcolor}could not open colors file "{cf}"{colors['default']}') 
+        print(f'{errcolor}{"permission error" if type(e) is PermissionError else "i/o error"}: {normalcolor}could not write to colors file "{cf}"{colors["default"]}') 
+        print()
         
 filteresc = re.compile(r"[\x00-\x09\x0b-\x1f]")
 def fe(s2):
@@ -386,5 +389,4 @@ except KeyboardInterrupt:
 if error_printing:
   print()
   print(f"{normalcolor}There were errors printing results. `set PYTHONUTF8=1` to resolve this.{colors['default']}") 
-print(f"{fe(colors["default"])=}")#debug
 print(colors["default"], end="")
