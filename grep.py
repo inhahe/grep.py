@@ -6,15 +6,13 @@
 #showing multiline output with --dotall is ugly, since the first line isn't aligned with the next lines.
 #grep.exe automatically detects binary files and just reports whether they match or not. 
 #distinguish between file names and directory names in error messages?
-#--x_files * once gave "permission denied:" with no file name
 #filter out terminal escape sequences (are they all below 32?) in match text. filtered out <32 but it still messes up the terminal.
 #should we be nice to the users and change --x_paths and --x_files to --x-paths and --x-files?
 #why is listing d:\ so slow even without a regex?
 #add parameter for max_outofmemory?
 #test out-of-memory conditions
 #why does `grep.py --s` with anything directory following the s not generate an error? seems like a bug in argparse.
-#options to exclude simlink files and/or simlink directories? gnu grep lets you do that and include symlink dirs that are on the command line.
-#detect circular recursion by checking inodes?
+#detect circular recursion by checking inodes
 #use os.scandir instead? it's faster because it uses a cache, but i'd have to figure out how to extract the filenames. it returns DirEntry objects.
 # also, if it uses a cache, could some files be missing from the scan? texnickal texnical said yes.
 # apparently i could use os.walk and not search certain directories because "<TeXNickAL> (You're allowed to alter the list of son-nodes it returns at each step.)"
@@ -22,6 +20,11 @@
 #  but os.walk uses scandir
 #  os.walk has a follow_symlinks option
 #issue: grep.py -R temp will show not only the symlinked dir temp but also teh symlinked dir temp\temp
+#add sanity check to make sure user doesn't use -r AND -R?
+#find out the long parameter names for -r and -R
+#`grep.py -r -f d:\*` gives "permission denied: d:\". so does `grep.py -r . d:\*`
+#`grep.py -r -p d:\` gives "permission denied:"
+#Kernighan's Law strikes again.
 
 import os, re, argparse, fnmatch, sys
 from collections import deque
@@ -91,7 +94,7 @@ if args.set_colors == []:
   args.set_colors = "green gray red default red".split()
 if args.set_colors:
   if len(args.set_colors) != 5:
-    print(f"{colors['red']}error: {colors["default"]}wrong number of colors")
+    print(f"{colors['red']}error: {colors["default"]}wrong number of colors")#todo: use previously defined errcolor and normalcolor
     quit()
   else:
     open(cf, "w").write(" ".join(args.set_colors))  
@@ -129,14 +132,6 @@ if args.regex:
     sys.exit()
 
 i_paths = args.p or []
-if not args.p:
-  if len(args.files)==1 and args.r or args.R:
-    p, fn = os.path.split(args.files[0])
-    i_paths = [p]
-    i_files = [fn]
-  if i_paths == [""]: 
-    i_paths = ["."]
-
 i_files = (((args.files or []) + (args.f or []))) or ["*"]
 x_paths = [list(PurePath(p).parts) for p in args.x_paths] if args.x_paths else []
 x_files = args.x_files or []
@@ -160,7 +155,7 @@ def ld(directory):
       return r
 
 def walk(directory, parts, exclude=[], ignore_symlinks=False, include_symlinks=[]):
-  for fn in ld(directory): #todo: we should recursively pass the current parts list instead of using PurePath(p).parts for every p
+  for fn in ld(directory): 
     p = os.path.join(directory, fn)
     if os.path.isfile(p):
       yield (p, fn)
@@ -217,7 +212,7 @@ def process(p):
               if args.negate:
                 prn(p)
           except MemoryError:
-            print("f{errcolor}out of memory: {normalcolor}{p}")
+            print(f"{errcolor}out of memory: {normalcolor}{p}")
         else:
           outofmemory = 0
           num_matches = 0
@@ -260,14 +255,14 @@ def process(p):
             except MemoryError:
               outofmemory += 1 
               if outofmemory <= max_outofmemory:
-                print("f{errcolor}out of memory on line {lncolor}line_number{errcolor}: {normalcolor}{p}")
+                print(f"{errcolor}out of memory on line {lncolor}line_number{errcolor}: {normalcolor}{p}")
               elif outofmemory == max_outofmemory+1:
-                print("f{errcolor}max out-of-memory notifications exceeded for file: {normalcolor}{p}")
+                print(f"{errcolor}max out-of-memory notifications exceeded for file: {normalcolor}{p}")
       else:
         try: 
           data = inf.read()
         except MemoryError:
-          print("f{errcolor}out of memory: {normalcolor}{p}")
+          print(f"{errcolor}out of memory: {normalcolor}{p}")
         else:
           if args.negate:
             if not regexc.search(data):
@@ -280,7 +275,7 @@ def process(p):
               prn(p, None, x)
   s.add(p)
 
-#n and n2 slightly slow down operations by making some things iterate over a list with one value 
+#n and n2 slightly slow down operations by making some things iterate over a list with one value, as opposed to the nested if's i had before that didn't use n and n2.
 def n(p, fn, i_p, i_f, ignore_symlinks=False, include_symlinks=[]):
   for path in i_p:
     for p, fn in walk(path, [path], x_paths, ignore_symlinks):
