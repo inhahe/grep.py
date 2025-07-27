@@ -22,15 +22,12 @@
 #issue: grep.py -R temp will show not only the symlinked dir temp but also teh symlinked dir temp\temp
 #add sanity check to make sure user doesn't use -r AND -R?
 #find out the long parameter names for -r and -R
-#`grep.py -r -f d:\*` gives "permission denied: d:\". so does `grep.py -r . d:\*`
-#`grep.py -r -p d:\` gives "permission denied:"
-#Kernighan's Law strikes again.
 #should we have an --include-symlinks or just use -p? both would result in the same thing except for when the files would show up 
 # in the traversal. though we could have walk check all the i_paths for each directory that's a symlink. that shouldn't take a lot more
 # cpu in most cases. that's what we're doing.
 #we could show more error info, because i saw "PermissionError: [WinError 21] The device is not ready: 'd:\\'" when i didn't try/except
 #automatically disable color if detected that output is being redirected to a file?
-#assuming utf-8 actually changes what you see in binary files
+#decoding everything as utf-8 distorts the output of binary files
 
 from ast import Pass
 import os, re, argparse, fnmatch, sys
