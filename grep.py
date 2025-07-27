@@ -1,3 +1,4 @@
+
 #todo: 
 #take care of the abuse of global variables?
 #add an option for multiline?
@@ -31,6 +32,7 @@
 #no-color automatically saving the setting might be annoying to users who are using --no-color just to output to a file...
 #detect invalid filespec before even searching anything and quit?
 #think about changing set-colors so the user doesn't have to specify all six and remember the order 
+#make errors using --remember use the color configuration just specified
 
 import os, re, argparse, fnmatch, sys
 from collections import deque
@@ -83,14 +85,16 @@ cf = os.path.join(d, "grep.py.colors.conf")
 fncolor, coloncolor, lncolor, normalcolor, errcolor, esccolor = (colors.get(x, colors["default"]) for x in defaultcolors)
 if args.no_color:
   if args.remember:
-    open(cf, "w").write("")
+    try:
+       open(cf, "w").write("")
+    except (PermissionError, IOError) as e: 
+      print(f'{"permission error" if type(e) is PermissionError else "i/o error"}: could not open colors file "{cf}"{colors['default']}')    
 else:
   if os.path.isfile(cf):
     try:
       readcolors = open(cf).read().split()
     except (PermissionError, IOError) as e: 
-      print(f"{colors['red']}{'permission error' if type(e) is PermissionError else 'i/o error'}: {colors['default']}"
-      " could not open colors file {cf}") 
+      print(f'{colors["red"]}{"permission error" if type(e) is PermissionError else "i/o error"}: {colors["default"]}could not open colors file "{cf}"') 
     else:
       if not readcolors:
         use_colors = False
@@ -121,8 +125,7 @@ if args.set_colors:
       try:
         open(cf, "w").write(" ".join(args.set_colors))
       except (PermissionError, IOError) as e: 
-        print(f"{colors['red']}{'permission error' if type(e) is PermissionError else 'i/o error'}: {colors['default']}"
-        " could not open colors file {cf}") 
+        print(f'{errcolor}{"permission error" if type(e) is PermissionError else "i/o error"}: {normalcolor}could not open colors file "{cf}"{colors['default']}') 
         
 filteresc = re.compile(r"[\x00-\x09\x0b-\x1f]")
 def fe(s2):
@@ -383,4 +386,5 @@ except KeyboardInterrupt:
 if error_printing:
   print()
   print(f"{normalcolor}There were errors printing results. `set PYTHONUTF8=1` to resolve this.{colors['default']}") 
+print(f"{fe(colors["default"])=}")#debug
 print(colors["default"], end="")
