@@ -28,6 +28,8 @@
 #we could show more error info, because i saw "PermissionError: [WinError 21] The device is not ready: 'd:\\'" when i didn't try/except
 #automatically disable color if detected that output is being redirected to a file?
 #decoding everything as utf-8 distorts the output of binary files
+#would it be better to remove the spaces after colors after error messages?
+#no-color automatically saving the setting might be annoying to users who are using --no-color just to output to a file...
 
 from ast import Pass
 import os, re, argparse, fnmatch, sys
@@ -39,8 +41,8 @@ parser = argparse.ArgumentParser()
 parser.add_argument("regex", nargs="?", help="regular expression pattern to search for")
 parser.add_argument("files", nargs="*", help="search files matching these filename patterns")
 parser.add_argument("-f", nargs="*", help="search files matching these filename patterns. this option exists so you can search files even if you don't specify a regex")
-parser.add_argument("-R", action="store_true", help="search directories recursively")
-parser.add_argument("-r", action="store_true", help="search directories recursively, ignoring symlinked directories unless they're explicitly included")
+parser.add_argument("-R", "--dereference-recursive", action="store_true", help="search directories recursively")
+parser.add_argument("-r", "--recursive", action="store_true", help="search directories recursively, ignoring symlinked directories unless they're explicitly included")
 parser.add_argument("-p", nargs="*", metavar="path", help="search these paths")
 parser.add_argument("--x_files", nargs="*", metavar = "filespec", help="exclude these filename patterns from search")
 parser.add_argument("--x_paths", nargs="*", metavar = "path", help="exclude these paths from search")
@@ -75,7 +77,6 @@ if args.no_color:
   d = os.path.dirname(os.path.abspath(__file__))
   cf = os.path.join(d, "grep.py.colors.conf")
   open(cf, "w").write("default default default default default")
-  
 if use_colors and os.name=="nt":
   try:
     from colorama import just_fix_windows_console
@@ -84,22 +85,23 @@ if use_colors and os.name=="nt":
     use_colors = False    
     print("To enable colored output, `pip install colorama`")
     print()
-
 if use_colors:
   colors = dict(zip("black, darkred, darkgreen, darkyellow, darkblue, darkmagenta, darkcyan, lightgray, gray, red, green, yellow, blue, magenta, cyan, white, default".split(", "), 
                      list(f"\033[0;{x}m" for x in range(30, 38)) + list(f"\033[1;{x}m" for x in range(30, 38))+["\033[0m"]))
 else:
   colors = dict(zip("black, darkred, darkgreen, darkyellow, darkblue, darkmagenta, darkcyan, lightgray, gray, red, green, yellow, blue, magenta, cyan, white, default".split(", "), 
                      [""]*17))
-
 d = os.path.dirname(os.path.abspath(__file__))
 cf = os.path.join(d, "grep.py.colors.conf")
-
+if os.path.isfile(cf):
+  fncolor, coloncolor, lncolor, normalcolor, errcolor = (colors.get(x, colors["default"]) for x in open(cf).read().split())
+else:
+ fncolor, coloncolor, lncolor, normalcolor, errcolor = colors["green"], colors["gray"], colors["red"], colors["default"], colors["red"]
 if args.set_colors == []:
   args.set_colors = "green gray red default red".split()
 if args.set_colors:
   if len(args.set_colors) != 5:
-    print(f"{colors['red']}error: {colors['default']}wrong number of colors")#todo: use previously defined errcolor and normalcolor
+    print(f"{errcolor}error: {normalcolor}wrong number of colors")
     quit()
   else:
     open(cf, "w").write(" ".join(args.set_colors))  
@@ -169,28 +171,29 @@ def walk(directory, parts): #maybe we should make x_paths and i_paths and -r exp
         yield (p, fn)
       elif os.path.isdir(p):
         parts2 = parts+(fn,)
-        if not (args.r and os.path.islink(p) and not any(parts2[-len(x):] == x for x in i_paths)): #todo: is this right?
+        if not (args.recursive and os.path.islink(p) and not any(parts2[-len(x):] == x for x in i_paths)): #todo: is this right?
           if not any(parts2[-len(x):] == x for x in x_paths): #this is really dirty but i don't know of a better solution do excludes 
             yield from walk(p, parts2)                        # how I want
   sparts.add(parts)
  
+error_printing = False
 def prn(p, ln=None, s=None): #todo: add note about set pythonutf8
+  global error_printing
   if not s:
     try:
       print(f"{normalcolor}{p}")
-      pass
     except UnicodeEncodeError:
       print(f"{errcolor}error printing filename.")            
-      pass
+      error_printing = True
   else:
     s2 = s.decode("utf-8", errors="ignore").rstrip()
     s2 = filteresc.sub("", s2) 
     p = p.removeprefix(".\\")
     try:
       print(f"{fncolor}{p}", end="")
-      pass
     except UnicodeEncodeError:
       print(f"{errcolor}error printing filename", end="")
+      error_printing = True
     else:
       if args.line_numbers:
         print(f"{coloncolor}:{lncolor}{ln}{coloncolor}:", end="")
@@ -200,6 +203,7 @@ def prn(p, ln=None, s=None): #todo: add note about set pythonutf8
         print(f"{normalcolor}{s2}")
       except UnicodeEncodeError:
         print(f"{errcolor}error printing {'match text' if args.dotall else 'line'}")
+        error_printing = True
 def decode(s):
   return s.decode("utf-8", errors="ignore").rstrip()    
 
@@ -300,12 +304,12 @@ def process(p):
 
 s = set()
 
-if not (args.regex or args.p or args.x_files or args.x_paths or args.files or args.f or args.l or args.r or args.R):
+if not (args.regex or args.p or args.x_files or args.x_paths or args.files or args.f or args.l or args.recursive or args.dereference_recursive):
   quit()
 
 try: 
   i_files2 = []
-  if args.r or args.R:
+  if args.recursive or args.dereference_recursive:
     for pf in i_files:
       p, spec = os.path.split(pf)
       if p:
@@ -350,6 +354,8 @@ try:
   if not s:
     print("No files matched your criteria.")
 except KeyboardInterrupt:
-  print(f"{colors['magenta']}^C{colors['default']}")
-  quit()
+  print()
+  print(f"{colors['magenta']}^C")
+if error_printing:
+  print(f"{normalcolor}There were errors printing. `set PYTHONUTF8=1` to resolve this.") 
 print(colors["default"], end="")
