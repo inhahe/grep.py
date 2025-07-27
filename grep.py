@@ -33,7 +33,6 @@
 # colorify the replacements?
 #detect invalid filespec before even searching anything and quit?
 
-from ast import Pass
 import os, re, argparse, fnmatch, sys
 from collections import deque
 from pathlib import PurePath
