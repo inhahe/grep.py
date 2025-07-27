@@ -29,8 +29,6 @@
 #decoding everything as utf-8 distorts the output of binary files
 #would it be better to remove the spaces after colors after error messages?
 #no-color automatically saving the setting might be annoying to users who are using --no-color just to output to a file...
-#replace [\x00-\x1f] with their \x codes instead of just filtering them out?
-# colorify the replacements?
 #detect invalid filespec before even searching anything and quit?
 
 import os, re, argparse, fnmatch, sys
@@ -57,21 +55,19 @@ parser.add_argument("-L", "--negate", action="store_true", help="show only files
 parser.add_argument("-l", action="store_true", help="show only filenames")
 parser.add_argument("-n", "--line_numbers", action="store_true", help="show line numbers")
 parser.add_argument("--no-color", action="store_true", help="disable colorized output. grep.py will remember this setting in the future")
-parser.add_argument("--set-colors", nargs="*", metavar="color", help="provide five color names to set the colors of filenames, colons, line numbers, match contents, and error messages to.\n"
+parser.add_argument("--set-colors", nargs="*", metavar="color", help="provide six color names to set the colors of filenames, colons, "
+                    "line numbers, match contents, error messages and character escape codes to.\n"
                     "options are black, darkred, darkgreen, darkyellow, darkblue, darkmagenta, darkcyan, lightgray,  gray, red, green, yellow, blue, magenta, cyan, and white.\n"
                     "grep.py will remember the color settings in the future.\n"
                     "--set-colors with no options to restore colors to their defaults")
 
-max_err = 5
- 
 if len(sys.argv) == 1:
   parser.print_help()
   sys.exit()
 args = parser.parse_args()
 
+max_err = 5
 use_colors = not args.no_color
-
-filteresc = re.compile(r"[\x00-\x1F]") 
 
 if args.no_color:
   d = os.path.dirname(os.path.abspath(__file__))
@@ -94,24 +90,32 @@ else:
 d = os.path.dirname(os.path.abspath(__file__))
 cf = os.path.join(d, "grep.py.colors.conf")
 if os.path.isfile(cf):
-  fncolor, coloncolor, lncolor, normalcolor, errcolor = (colors.get(x, colors["default"]) for x in open(cf).read().split())
+  fncolor, coloncolor, lncolor, normalcolor, errcolor, esccolor = (colors.get(x, colors["default"]) for x in open(cf).read().split())
 else:
- fncolor, coloncolor, lncolor, normalcolor, errcolor = colors["green"], colors["gray"], colors["red"], colors["default"], colors["red"]
+ fncolor, coloncolor, lncolor, normalcolor, errcolor, esccolor = (
+   colors["green"], colors["gray"], colors["red"], colors["default"], colors["red"], colors["blue"]) #or would cyan be better for esccolors?
 if args.set_colors == []:
-  args.set_colors = "green gray red default red".split()
+  args.set_colors = "green gray red default red blue".split()
 if args.set_colors:
-  if len(args.set_colors) != 5:
+  if len(args.set_colors) != 6:
     print(f"{errcolor}error: {normalcolor}wrong number of colors")
     quit()
   else:
     open(cf, "w").write(" ".join(args.set_colors))  
-    fncolor, coloncolor, lncolor, normalcolor, errcolor = (colors.get(x, colors["default"]) for x in args.set_colors)
-else:
-  if os.path.isfile(cf):
-    fncolor, coloncolor, lncolor, normalcolor, errcolor = (colors.get(x, colors["default"]) for x in open(cf).read().split())
-  else:
-    fncolor, coloncolor, lncolor, normalcolor, errcolor = colors["green"], colors["gray"], colors["red"], colors["default"], colors["red"]
+    fncolor, coloncolor, lncolor, normalcolor, errcolor, esccolor = (colors.get(x, colors["default"]) for x in args.set_colors)
             
+filteresc = re.compile(r"[\x00-\x1F]")
+def fe(s2):
+  s3 = []
+  laststart = 0
+  for m in filteresc.finditer(s2):
+    start = m.start()
+    s3.extend((fr"{s2[laststart:start]}{esccolor}\x{ord(s2[start]):02x}{normalcolor}"))
+    laststart = start
+  s3.append(s2[laststart:])
+  return ''.join(s3)
+
+
 if args.c:
   from fnmatch import fnmatchcase as fnmatch
 else:
@@ -187,7 +191,7 @@ def prn(p, ln=None, s=None): #todo: add note about set pythonutf8
       error_printing = True
   else:
     s2 = s.decode("utf-8", errors="ignore").rstrip()
-    s2 = filteresc.sub("", s2) 
+    s2 = fe(s2)
     p = p.removeprefix(".\\")
     try:
       print(f"{fncolor}{p}", end="")
@@ -342,7 +346,7 @@ try:
             if fnmatch(fn, spec) and not any(fnmatch(fn, spec2) for spec2 in x_files): #we're considering x_fils but not i_files. 
               fn2 = os.path.join(p, fn)
               if not os.path.isdir(fn2):
-                process(os.path.join(p, fn))                                                            
+                process(os.path.join(p, fn))                                                           
     else:
       i_files2.append(spec)
     i_files2 = i_files2 or ["*"]
