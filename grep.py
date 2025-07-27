@@ -28,7 +28,7 @@
 #we could show more error info, because i saw "PermissionError: [WinError 21] The device is not ready: 'd:\\'" when i didn't try/except
 #automatically disable color if detected that output is being redirected to a file?
 #decoding everything as utf-8 distorts the output of binary files
-#would it be better to remove the spaces after colors after error messages?
+#would it be better to remove the spaces after colons after error messages?
 #no-color automatically saving the setting might be annoying to users who are using --no-color just to output to a file...
 
 from ast import Pass
