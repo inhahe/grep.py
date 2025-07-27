@@ -33,6 +33,7 @@
 #does the sparts check actually make the s check completely redundant in all cases? no, i don't think it does in e.g. `-r d:\*.py d:\*.txt`
 # actually, we have to fix that. sparts will make that not work correctly. no *.txt files will be shown.
 #replace [\x00-\x1f] with their \x codes instead of just filtering them out?
+#detect invalid filespec before even searching anything and quit?
 
 from ast import Pass
 import os, re, argparse, fnmatch, sys
@@ -338,11 +339,14 @@ try:
     for pf in i_files:
       p, spec = os.path.split(pf)
       if p:
-        for fn in os.listdir(p):
-          if fnmatch(fn, spec) and not any(fnmatch(fn, spec2) for spec2 in x_files): #we're considering x_fils but not i_files. 
-            fn2 = os.path.join(p, fn)
-            if not os.path.isdir(fn2):
-              process(os.path.join(p, fn))                                                              # that may be considered inconsistent.
+        if not spec:
+          print(f"{errcolor}invalid filespec: {normalcolor}{pf}")
+        else:
+          for fn in os.listdir(p):
+            if fnmatch(fn, spec) and not any(fnmatch(fn, spec2) for spec2 in x_files): #we're considering x_fils but not i_files. 
+              fn2 = os.path.join(p, fn)
+              if not os.path.isdir(fn2):
+                process(os.path.join(p, fn))                                                              # that may be considered inconsistent.
     else:
       i_files2.append(spec)
     i_files2 = i_files2 or ["*"]
