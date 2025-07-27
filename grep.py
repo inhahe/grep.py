@@ -30,6 +30,9 @@
 #decoding everything as utf-8 distorts the output of binary files
 #would it be better to remove the spaces after colors after error messages?
 #no-color automatically saving the setting might be annoying to users who are using --no-color just to output to a file...
+#does the sparts check actually make the s check completely redundant in all cases? no, i don't think it does in e.g. `-r d:\*.py d:\*.txt`
+# actually, we have to fix that. sparts will make that not work correctly. no *.txt files will be shown.
+#replace [\x00-\x1f] with their \x codes instead of just filtering them out?
 
 from ast import Pass
 import os, re, argparse, fnmatch, sys
@@ -200,7 +203,7 @@ def prn(p, ln=None, s=None): #todo: add note about set pythonutf8
       else:
         print(f"{coloncolor}:", end="")
       try:
-        print(f"{normalcolor}{s2}")#debug
+        print(f"{normalcolor}{s2}")
       except UnicodeEncodeError:
         print(f"{errcolor}error printing {'match text' if args.dotall else 'line'}")
         error_printing = True
@@ -308,17 +311,25 @@ if not (args.regex or args.p or args.x_files or args.x_paths or args.files or ar
   quit()
 
 try: 
+  wasap = False
   i_files2 = []
   if args.recursive or args.dereference_recursive:
     for pf in i_files:
       p, spec = os.path.split(pf)
       if p:
-        for p2, fn in walk(p, (p,)):
-          if fnmatch(fn, spec) and not any(fnmatch(fn, spec2) for spec2 in x_files): #we're considering x_fils but not i_files. 
-            process(p2)                                                              # that may be considered inconsistent.
+        if not spec:
+          print(f"{errcolor}invalid filespec: {normalcolor}{pf}")
+        else:
+          sparts.clear()
+          for p2, fn in walk(p, (p,)):
+            if fnmatch(fn, spec) and not any(fnmatch(fn, spec2) for spec2 in x_files): #we're considering x_files but not i_files. 
+              process(p2)                                                              # it makes sense to me, but it is a bit inconsistent.
+          sparts.clear()
+          wasap = True
       else:
         i_files2.append(spec)
-    i_files2 = i_files2 or ["*"]
+    if not (wasap or i_files2):
+      i_files2 = ["*"]
     for p in i_paths:
       for p, fn in walk(p, (p,)):
         if any(fnmatch(fn, spec2) for spec2 in i_files2) and not any(fnmatch(fn, spec3) for spec3 in x_files):
@@ -327,30 +338,20 @@ try:
     for pf in i_files:
       p, spec = os.path.split(pf)
       if p:
-        try:
-          fns = os.listdir(p)
-        except (PermissionError, IOError) as e:
-          print(f"{errcolor}{'permission denied' if type(e) is PermissionError else 'i/o error'}: {normalcolor}{p}")
-        else:
-          for fn in fns:
-            if fnmatch(fn, spec) and not any(fnmatch(fn, spec2) for spec2 in x_files): #we're considering x_fils but not i_files. 
-              fn2 = os.path.join(p, fn)
-              if not os.path.isdir(fn2):
-                process(os.path.join(p, fn))                                                              # that may be considered inconsistent.
+        for fn in os.listdir(p):
+          if fnmatch(fn, spec) and not any(fnmatch(fn, spec2) for spec2 in x_files): #we're considering x_fils but not i_files. 
+            fn2 = os.path.join(p, fn)
+            if not os.path.isdir(fn2):
+              process(os.path.join(p, fn))                                                              # that may be considered inconsistent.
     else:
       i_files2.append(spec)
     i_files2 = i_files2 or ["*"]
     for path in i_paths:
-      try:
-        fns = os.listdir(path)
-      except (PermissionError, IOError) as e:
-        print(f"{errcolor}{'permission denied' if type(e) is PermissionError else 'i/o error'}: {normalcolor}{path}")
-      else:
-        for fn in fns:
-          p = os.path.join(path, fn)
-          if not os.path.isdir(p):
-            if any(fnmatch(fn, spec) for spec in i_files2) and not any(fnmatch(fn, spec2) for spec2 in x_files):
-              process(p)
+      for fn in ld(path):
+        p = os.path.join(path, fn)
+        if not os.path.isdir(p):
+          if any(fnmatch(fn, spec) for spec in i_files2) and not any(fnmatch(fn, spec2) for spec2 in x_files):
+            process(p)
   if not s:
     print("No files matched your criteria.")
 except KeyboardInterrupt:
