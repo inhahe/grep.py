@@ -30,6 +30,7 @@
 #would it be better to remove the spaces after colors after error messages?
 #no-color automatically saving the setting might be annoying to users who are using --no-color just to output to a file...
 #detect invalid filespec before even searching anything and quit?
+#set-colors --remember doesn't work
 
 import os, re, argparse, fnmatch, sys
 from collections import deque
@@ -54,6 +55,7 @@ parser.add_argument("-m", "--max-count", type=int, metavar="num", help="maximum 
 parser.add_argument("-L", "--negate", action="store_true", help="show only files that contain no match")
 parser.add_argument("-l", action="store_true", help="show only filenames")
 parser.add_argument("-n", "--line_numbers", action="store_true", help="show line numbers")
+parser.add_argument("--remember", action="store_true", help="remember color settings for the future")
 parser.add_argument("--no-color", action="store_true", help="disable colorized output. grep.py will remember this setting in the future")
 parser.add_argument("--set-colors", nargs="*", metavar="color", help="provide six color names to set the colors of filenames, colons, "
                     "line numbers, match contents, error messages and character escape codes to.\n"
@@ -67,12 +69,34 @@ if len(sys.argv) == 1:
 args = parser.parse_args()
 
 max_err = 5
-use_colors = not args.no_color
 
+yescolors = dict(zip("black, darkred, darkgreen, darkyellow, darkblue, darkmagenta, darkcyan, lightgray, gray, red, green, yellow, blue, "
+                  "magenta, cyan, white, default".split(", "),
+                  list(f"\033[0;{x}m" for x in range(30, 38)) + list(f"\033[1;{x}m" for x in range(30, 38))+["\033[0m"]))
+nocolors = dict(zip("black, darkred, darkgreen, darkyellow, darkblue, darkmagenta, darkcyan, lightgray, gray, red, green, yellow, blue, magenta, cyan, white, default".split(", "), 
+                     [""]*17))
+defaultcolors = "green gray red default red blue".split()
+use_colors = not args.no_color
+colors = yescolors
+d = os.path.dirname(os.path.abspath(__file__))
+cf = os.path.join(d, "grep.py.colors.conf")
+fncolor, coloncolor, lncolor, normalcolor, errcolor, esccolor = (colors.get(x, colors["default"]) for x in defaultcolors)
 if args.no_color:
-  d = os.path.dirname(os.path.abspath(__file__))
-  cf = os.path.join(d, "grep.py.colors.conf")
-  open(cf, "w").write("default default default default default")
+  if args.remember:
+    open(cf, "w").write("")
+else:
+  if os.path.isfile(cf):
+    try:
+      readcolors = open(cf).read().split()
+    except (PermissionError, IOError) as e: 
+      print(f"{colors['red']}{'permission error' if type(e) is PermissionError else 'i/o error'}: {colors['default']}"
+      " could not open colors file {cf}") 
+    else:
+      if not readcolors:
+        use_colors = False
+      else: 
+        fncolor, coloncolor, lncolor, normalcolor, errcolor, esccolor = (colors.get(x, colors["default"]) for x in readcolors)
+        
 if use_colors and os.name=="nt":
   try:
     from colorama import just_fix_windows_console
@@ -81,40 +105,35 @@ if use_colors and os.name=="nt":
     use_colors = False    
     print("To enable colored output, `pip install colorama`")
     print()
-if use_colors:
-  colors = dict(zip("black, darkred, darkgreen, darkyellow, darkblue, darkmagenta, darkcyan, lightgray, gray, red, green, yellow, blue, magenta, cyan, white, default".split(", "), 
-                     list(f"\033[0;{x}m" for x in range(30, 38)) + list(f"\033[1;{x}m" for x in range(30, 38))+["\033[0m"]))
-else:
-  colors = dict(zip("black, darkred, darkgreen, darkyellow, darkblue, darkmagenta, darkcyan, lightgray, gray, red, green, yellow, blue, magenta, cyan, white, default".split(", "), 
-                     [""]*17))
-d = os.path.dirname(os.path.abspath(__file__))
-cf = os.path.join(d, "grep.py.colors.conf")
-if os.path.isfile(cf):
-  fncolor, coloncolor, lncolor, normalcolor, errcolor, esccolor = (colors.get(x, colors["default"]) for x in open(cf).read().split())
-else:
- fncolor, coloncolor, lncolor, normalcolor, errcolor, esccolor = (
-   colors["green"], colors["gray"], colors["red"], colors["default"], colors["red"], colors["blue"]) #or would cyan be better for esccolors?
+if not use_colors:
+  colors = nocolors
+  fncolor, coloncolor, lncolor, normalcolor, errcolor, esccolor = [""]*6
 if args.set_colors == []:
-  args.set_colors = "green gray red default red blue".split()
+  args.set_colors = defaultcolors
 if args.set_colors:
+  colors = yescolors
   if len(args.set_colors) != 6:
     print(f"{errcolor}error: {normalcolor}wrong number of colors")
     quit()
   else:
-    open(cf, "w").write(" ".join(args.set_colors))  
     fncolor, coloncolor, lncolor, normalcolor, errcolor, esccolor = (colors.get(x, colors["default"]) for x in args.set_colors)
-            
-filteresc = re.compile(r"[\x00-\x1F]")
+    if args.remember:
+      try:
+        open(cf, "w").write(" ".join(args.set_colors))
+      except (PermissionError, IOError) as e: 
+        print(f"{colors['red']}{'permission error' if type(e) is PermissionError else 'i/o error'}: {colors['default']}"
+        " could not open colors file {cf}") 
+        
+filteresc = re.compile(r"[\x00-\x09\x0b-\x1f]")
 def fe(s2):
   s3 = []
-  laststart = 0
+  start = laststart = 0
   for m in filteresc.finditer(s2):
     start = m.start()
-    s3.extend((fr"{s2[laststart:start]}{esccolor}\x{ord(s2[start]):02x}{normalcolor}"))
+    s3.extend((fr"{s2[laststart+1:start]}{esccolor}\x{ord(s2[start]):02x}{normalcolor}"))
     laststart = start
-  s3.append(s2[laststart:])
+  s3.append(s2[laststart+1:])
   return ''.join(s3)
-
 
 if args.c:
   from fnmatch import fnmatchcase as fnmatch
