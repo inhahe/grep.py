@@ -346,7 +346,7 @@ try:
             if fnmatch(fn, spec) and not any(fnmatch(fn, spec2) for spec2 in x_files): #we're considering x_fils but not i_files. 
               fn2 = os.path.join(p, fn)
               if not os.path.isdir(fn2):
-                process(os.path.join(p, fn))                                                              # that may be considered inconsistent.
+                process(os.path.join(p, fn))                                                            
     else:
       i_files2.append(spec)
     i_files2 = i_files2 or ["*"]
