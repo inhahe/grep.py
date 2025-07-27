@@ -30,6 +30,7 @@
 #would it be better to remove the spaces after colors after error messages?
 #no-color automatically saving the setting might be annoying to users who are using --no-color just to output to a file...
 #detect invalid filespec before even searching anything and quit?
+#think about changing set-colors so the user doesn't have to specify all six and remember the order 
 
 import os, re, argparse, fnmatch, sys
 from collections import deque
