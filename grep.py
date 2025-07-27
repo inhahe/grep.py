@@ -36,7 +36,6 @@
 import os, re, argparse, fnmatch, sys
 from collections import deque
 from pathlib import PurePath
-from urllib.request import proxy_bypass
 
 parser = argparse.ArgumentParser()
 parser.add_argument("regex", nargs="?", help="regular expression pattern to search for")
