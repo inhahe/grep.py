@@ -1,22 +1,22 @@
 #todo: 
 #take care of the abuse of global variables?
 #add an option for multiline?
-#i once got an invalid character error at an f-string line, wtf
-#showing match results from binary files is problematic. it looks really messy, the lines tend to be really long, and it can do weird things to the terminal.
 #showing multiline output with --dotall is ugly, since the first line isn't aligned with the next lines.
 #grep.exe automatically detects binary files and just reports whether they match or not. 
 #distinguish between file names and directory names in error messages?
-#filter out terminal escape sequences (are they all below 32?) in match text. filtered out <32 but it still messes up the terminal.
 #should we be nice to the users and change --x_paths and --x_files to --x-paths and --x-files?
 #why is listing d:\ so slow even without a regex?
-#add parameter for max_outofmemory?
+#add parameter for max_err?
 #test out-of-memory conditions
 #why does `grep.py --s` with anything directory following the s not generate an error? seems like a bug in argparse.
 #detect circular recursion by checking inodes
-#use os.scandir instead? it's faster because it uses a cache, but i'd have to figure out how to extract the filenames. it returns DirEntry objects.
+#use os.scandir instead? it's faster because it uses a cache, but i'd have to figure out how to extract the filenames. 
+# it returns DirEntry objects.
 # also, if it uses a cache, could some files be missing from the scan? texnickal texnical said yes.
-# apparently i could use os.walk and not search certain directories because "<TeXNickAL> (You're allowed to alter the list of son-nodes it returns at each step.)"
-#  “When topdown is True, the caller can modify the dirnames list in-place (perhaps using del or slice assignment), and walk() will only recurse into the subdirectories whose names remain in dirnames”
+# apparently i could use os.walk and not search certain directories because 
+# "<TeXNickAL> (You're allowed to alter the list of son-nodes it returns at each step.)"
+#  “When topdown is True, the caller can modify the dirnames list in-place (perhaps using del or slice assignment), 
+#  and walk() will only recurse into the subdirectories whose names remain in dirnames”
 #  but os.walk uses scandir
 #  os.walk has a follow_symlinks option
 #issue: grep.py -R temp will show not only the symlinked dir temp but also teh symlinked dir temp\temp
@@ -25,10 +25,18 @@
 #`grep.py -r -f d:\*` gives "permission denied: d:\". so does `grep.py -r . d:\*`
 #`grep.py -r -p d:\` gives "permission denied:"
 #Kernighan's Law strikes again.
+#should we have an --include-symlinks or just use -p? both would result in the same thing except for when the files would show up 
+# in the traversal. though we could have walk check all the i_paths for each directory that's a symlink. that shouldn't take a lot more
+# cpu in most cases. that's what we're doing.
+#we could show more error info, because i saw "PermissionError: [WinError 21] The device is not ready: 'd:\\'" when i didn't try/except
+#automatically disable color if detected that output is being redirected to a file?
+#assuming utf-8 actually changes what you see in binary files
 
+from ast import Pass
 import os, re, argparse, fnmatch, sys
 from collections import deque
 from pathlib import PurePath
+from urllib.request import proxy_bypass
 
 parser = argparse.ArgumentParser()
 parser.add_argument("regex", nargs="?", help="regular expression pattern to search for")
@@ -55,16 +63,16 @@ parser.add_argument("--set-colors", nargs="*", metavar="color", help="provide fi
                     "grep.py will remember the color settings in the future.\n"
                     "--set-colors with no options to restore colors to their defaults")
 
-max_outofmemory = 5
+max_err = 5
  
 if len(sys.argv) == 1:
   parser.print_help()
   sys.exit()
 args = parser.parse_args()
 
-filteresc = re.compile(r"[\0-\32]")
-
 use_colors = not args.no_color
+
+filteresc = re.compile(r"[\x00-\x1F]") #this doesn't act ually match anything, even though ranges with the left side above 32 match things.
 
 if args.no_color:
   d = os.path.dirname(os.path.abspath(__file__))
@@ -94,7 +102,7 @@ if args.set_colors == []:
   args.set_colors = "green gray red default red".split()
 if args.set_colors:
   if len(args.set_colors) != 5:
-    print(f"{colors['red']}error: {colors["default"]}wrong number of colors")#todo: use previously defined errcolor and normalcolor
+    print(f"{colors['red']}error: {colors['default']}wrong number of colors")#todo: use previously defined errcolor and normalcolor
     quit()
   else:
     open(cf, "w").write(" ".join(args.set_colors))  
@@ -131,9 +139,9 @@ if args.regex:
     print(f"{errcolor}Regex pattern error: {normalcolor}{', '.join(e.args)}")
     sys.exit()
 
-i_paths = args.p or []
+i_paths = args.p or ["."]
 i_files = (((args.files or []) + (args.f or []))) or ["*"]
-x_paths = [list(PurePath(p).parts) for p in args.x_paths] if args.x_paths else []
+x_paths = [PurePath(p).parts for p in args.x_paths] if args.x_paths else []
 x_files = args.x_files or []
 
 lines_since_match = before_context + after_context + 1
@@ -149,34 +157,52 @@ def ld(directory):
     try:
       r = os.listdir(directory)
     except (PermissionError, IOError) as e:
-      print(f"{errcolor}{'permission denied' if type(e) is PermissionError else 'i/o error'}: {normalcolor}{p}")
+      print(f"{errcolor}{'permission denied' if type(e) is PermissionError else 'i/o error'}: {normalcolor}{directory}")
       return []
     else:
       return r
 
-def walk(directory, parts, exclude=[], ignore_symlinks=False, include_symlinks=[]):
-  for fn in ld(directory): 
-    p = os.path.join(directory, fn)
-    if os.path.isfile(p):
-      yield (p, fn)
-    elif os.path.isdir(p):
-      parts2 = parts+[fn]
-      if not (ignore_symlinks and os.path.islink(p) and not any(parts2[-len(x):] == x for x in include_symlinks)): #todo: is this right?
-        if not any(parts2[-len(x):] == x for x in exclude): #this is really dirty but i don't know of a better solution do excludes how I want
-          yield from walk(p, parts2, exclude, ignore_symlinks, include_symlinks)
-
-def prn(p, ln=None, s=None):
+sparts = set()
+def walk(directory, parts): #maybe we should make x_paths and i_paths and -r explicitly passed here even though they're
+  global sparts             # never going to be changed.
+  if not parts in sparts:
+    for fn in ld(directory):                         
+      p = os.path.join(directory, fn)
+      if os.path.isfile(p):
+        yield (p, fn)
+      elif os.path.isdir(p):
+        parts2 = parts+(fn,)
+        if not (args.r and os.path.islink(p) and not any(parts2[-len(x):] == x for x in i_paths)): #todo: is this right?
+          if not any(parts2[-len(x):] == x for x in x_paths): #this is really dirty but i don't know of a better solution do excludes 
+            yield from walk(p, parts2)                        # how I want
+  sparts.add(parts)
+ 
+def prn(p, ln=None, s=None): #todo: add note about set pythonutf8
   if not s:
-    print(f"{normalcolor}{p}")
+    try:
+      print(f"{normalcolor}{p}")
+      pass
+    except UnicodeEncodeError:
+      print(f"{errcolor}error printing filename.")            
+      pass
   else:
     s2 = s.decode("utf-8", errors="ignore").rstrip()
-    s2 = filteresc.sub("", s2) #escape sequences still mess up the terminal. how is that? 
+    s2 = filteresc.sub("", s2) 
     p = p.removeprefix(".\\")
-    if ln:
-      print(f"{fncolor}{p}{coloncolor}:{lncolor}{ln}{coloncolor}:{normalcolor}{s2}")
+    try:
+      print(f"{fncolor}{p}", end="")
+      pass
+    except UnicodeEncodeError:
+      print(f"{errcolor}error printing filename", end="")
     else:
-      print(f"{fncolor}{p}{coloncolor}:{normalcolor}{s2}")
-
+      if args.line_numbers:
+        print(f"{coloncolor}:{lncolor}{ln}{coloncolor}:", end="")
+      else:
+        print(f"{coloncolor}:", end="")
+      try:
+        print(f"{normalcolor}{s2}")
+      except UnicodeEncodeError:
+        print(f"{errcolor}error printing {'match text' if args.dotall else 'line'}")
 def decode(s):
   return s.decode("utf-8", errors="ignore").rstrip()    
 
@@ -214,7 +240,7 @@ def process(p):
           except MemoryError:
             print(f"{errcolor}out of memory: {normalcolor}{p}")
         else:
-          outofmemory = 0
+          outofmemorycount = 0
           num_matches = 0
           while True:
             try:
@@ -233,7 +259,7 @@ def process(p):
                 context_buffer.append(line)
                 if m: 
                   if lines_since_match > before_context + after_context:
-                    if matched_one: #if I weren't retarded, I could based this on lines_since_matched, before_context and after_context alone.
+                    if matched_one: #if I weren't retarded, I could based this on lines_since_matched, before_context \and after_context alone.  i think?
                       print("--")
                     for l in list(context_buffer)[-before_context-1:]:                 
                       if l: 
@@ -253,10 +279,10 @@ def process(p):
                 if m:
                   prn(p, line_number, line)
             except MemoryError:
-              outofmemory += 1 
-              if outofmemory <= max_outofmemory:
+              outofmemorycount += 1 
+              if outofmemorycount <= max_err:
                 print(f"{errcolor}out of memory on line {lncolor}line_number{errcolor}: {normalcolor}{p}")
-              elif outofmemory == max_outofmemory+1:
+              elif outofmemorycount == max_err+1:
                 print(f"{errcolor}max out-of-memory notifications exceeded for file: {normalcolor}{p}")
       else:
         try: 
@@ -275,53 +301,55 @@ def process(p):
               prn(p, None, x)
   s.add(p)
 
-#n and n2 slightly slow down operations by making some things iterate over a list with one value, as opposed to the nested if's i had before that didn't use n and n2.
-def n(p, fn, i_p, i_f, ignore_symlinks=False, include_symlinks=[]):
-  for path in i_p:
-    for p, fn in walk(path, [path], x_paths, ignore_symlinks):
-      if any(fnmatch(fn, pat) for pat in i_f) and not any(fnmatch(fn, pat) for pat in x_files):
-        process(p)
-
-def n2(p, i_f):
-  for fn in ld(p):
-    if any(fnmatch(fn, pat) for pat in i_f) and not any(fnmatch(fn, pat) for pat in x_files):
-      if p:
-        p2 = os.path.join(p, fn)
-      else:
-        p2 = fn #is this right?
-      if os.path.isfile(p2): 
-        process(p2)
-
 s = set()
-if not args.regex:
-  if not (args.p or args.x_files or args.x_paths or args.files or args.f or args.l or args.r or args.R):
-    quit()
+
+if not (args.regex or args.p or args.x_files or args.x_paths or args.files or args.f or args.l or args.r or args.R):
+  quit()
 
 try: 
+  i_files2 = []
   if args.r or args.R:
     for pf in i_files:
       p, spec = os.path.split(pf)
       if p:
-        n(p, spec, [p], [spec], ignore_symlinks=args.r, include_symlinks=[p]+i_paths)
+        for p2, fn in walk(p, (p,)):
+          if fnmatch(fn, spec) and not any(fnmatch(fn, spec2) for spec2 in x_files): #we're considering x_fils but not i_files. 
+            process(p2)                                                              # that may be considered inconsistent.
       else:
-        n(p, spec, i_paths or ["."], i_files, ignore_symlinks=args.r, include_symlinks=i_paths)
-  else: #can we make the following code simpler?
-    if i_paths:
-      for spec in i_files:
-        p, fspec = os.path.split(spec)
-        if p:
-          n2(p, [fspec])
-        else:
-          for path in i_paths:
-            n2(path, i_files)
-    else:
-     for f in i_files:
-       p, spec = os.path.split(f)
-       if p:
-         n2(p, [spec])
+        i_files2.append(spec)
+    i_files2 = i_files2 or ["*"]
+    for p in i_paths:
+      for p, fn in walk(p, (p,)):
+        if any(fnmatch(fn, spec2) for spec2 in i_files2) and not any(fnmatch(fn, spec3) for spec3 in x_files):
+          process(p)
+  else:
+   for pf in i_files:
+     p, spec = os.path.split(pf)
+     if p:
+       try:
+         fns = os.listdir(p)
+       except (PermissionError, IOError) as e:
+         print(f"{errcolor}{'permission denied' if type(e) is PermissionError else 'i/o error'}: {normalcolor}{p}")
        else:
-         n2(".", [spec])
-
+         for fn in fns:
+           if fnmatch(fn, spec) and not any(fnmatch(fn, spec2) for spec2 in x_files): #we're considering x_fils but not i_files. 
+             fn2 = os.path.join(p, fn)
+             if not os.path.isdir(fn2):
+               process(os.path.join(p, fn))                                                              # that may be considered inconsistent.
+         else:
+           i_files2.append(spec)
+     i_files2 = i_files2 or ["*"]
+     for path in i_paths:
+       try:
+         fns = os.listdir(path)
+       except (PermissionError, IOError) as e:
+         print(f"{errcolor}{'permission denied' if type(e) is PermissionError else 'i/o error'}: {normalcolor}{path}")
+       else:
+         for fn in fns:
+           p = os.path.join(path, fn)
+           if not os.path.isdir(p):
+             if any(fnmatch(fn, spec) for spec in i_files2) and not any(fnmatch(fn, spec2) for spec2 in x_files):
+               process(p)
   if not s:
     print("No files matched your criteria.")
 except KeyboardInterrupt:
