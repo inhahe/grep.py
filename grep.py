@@ -32,7 +32,7 @@
 #no-color automatically saving the setting might be annoying to users who are using --no-color just to output to a file...
 #detect invalid filespec before even searching anything and quit?
 #think about changing set-colors so the user doesn't have to specify all six and remember the order 
-#make errors using --remember use the color configuration just specified
+#make error reading from colors file use colors just passed by --set-colors
 
 import os, re, argparse, fnmatch, sys
 from collections import deque
@@ -95,7 +95,7 @@ else:
     try:
       readcolors = open(cf).read().split()
     except (PermissionError, IOError) as e: 
-      print(f'{colors["red"]}{"permission error" if type(e) is PermissionError else "i/o error"}: {colors["default"]}could not read from colors file "{cf}"') 
+      print(f'{errcolor}{"permission error" if type(e) is PermissionError else "i/o error"}: {colors["default"]}could not read from colors file "{cf}"') 
       print()
     else:
       if not readcolors:
