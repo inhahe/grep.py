@@ -12,14 +12,13 @@
 #detect circular recursion by checking inodes
 #use os.scandir instead? it's faster because it uses a cache, but i'd have to figure out how to extract the filenames. 
 # it returns DirEntry objects.
-# also, if it uses a cache, could some files be missing from the scan? texnickal said yes.
+# also, if it uses a cache, could some files be missing from the scan? texnickal texnical said yes.
 # apparently i could use os.walk and not search certain directories because 
 # "<TeXNickAL> (You're allowed to alter the list of son-nodes it returns at each step.)"
 #  “When topdown is True, the caller can modify the dirnames list in-place (perhaps using del or slice assignment), 
 #  and walk() will only recurse into the subdirectories whose names remain in dirnames”
 #  but os.walk uses scandir
 #  os.walk has a follow_symlinks option
-#  but i'm not sure we could do that with explicitly included symlinks
 #issue: grep.py -R temp will show not only the symlinked dir temp but also teh symlinked dir temp\temp
 #add sanity check to make sure user doesn't use -r AND -R?
 #find out the long parameter names for -r and -R
@@ -29,9 +28,10 @@
 #we could show more error info, because i saw "PermissionError: [WinError 21] The device is not ready: 'd:\\'" when i didn't try/except
 #automatically disable color if detected that output is being redirected to a file?
 #decoding everything as utf-8 distorts the output of binary files
-#would it be better to remove the spaces after colons after error messages?
+#would it be better to remove the spaces after colors after error messages?
 #no-color automatically saving the setting might be annoying to users who are using --no-color just to output to a file...
 
+from ast import Pass
 import os, re, argparse, fnmatch, sys
 from collections import deque
 from pathlib import PurePath
@@ -71,7 +71,7 @@ args = parser.parse_args()
 
 use_colors = not args.no_color
 
-filteresc = re.compile(r"[\x00-\x1F]") #this doesn't act ually match anything, even though ranges with the left side above 32 match things.
+filteresc = re.compile(r"[\x00-\x1F]") 
 
 if args.no_color:
   d = os.path.dirname(os.path.abspath(__file__))
@@ -200,7 +200,7 @@ def prn(p, ln=None, s=None): #todo: add note about set pythonutf8
       else:
         print(f"{coloncolor}:", end="")
       try:
-        print(f"{normalcolor}{s2}")
+        print(f"{normalcolor}{s2}")#debug
       except UnicodeEncodeError:
         print(f"{errcolor}error printing {'match text' if args.dotall else 'line'}")
         error_printing = True
@@ -324,38 +324,39 @@ try:
         if any(fnmatch(fn, spec2) for spec2 in i_files2) and not any(fnmatch(fn, spec3) for spec3 in x_files):
           process(p)
   else:
-   for pf in i_files:
-     p, spec = os.path.split(pf)
-     if p:
-       try:
-         fns = os.listdir(p)
-       except (PermissionError, IOError) as e:
-         print(f"{errcolor}{'permission denied' if type(e) is PermissionError else 'i/o error'}: {normalcolor}{p}")
-       else:
-         for fn in fns:
-           if fnmatch(fn, spec) and not any(fnmatch(fn, spec2) for spec2 in x_files): #we're considering x_fils but not i_files. 
-             fn2 = os.path.join(p, fn)
-             if not os.path.isdir(fn2):
-               process(os.path.join(p, fn))                                                              # that may be considered inconsistent.
-     else:
-       i_files2.append(spec)
-     i_files2 = i_files2 or ["*"]
-     for path in i_paths:
-       try:
-         fns = os.listdir(path)
-       except (PermissionError, IOError) as e:
-         print(f"{errcolor}{'permission denied' if type(e) is PermissionError else 'i/o error'}: {normalcolor}{path}")
-       else:
-         for fn in fns:
-           p = os.path.join(path, fn)
-           if not os.path.isdir(p):
-             if any(fnmatch(fn, spec) for spec in i_files2) and not any(fnmatch(fn, spec2) for spec2 in x_files):
-               process(p)
+    for pf in i_files:
+      p, spec = os.path.split(pf)
+      if p:
+        try:
+          fns = os.listdir(p)
+        except (PermissionError, IOError) as e:
+          print(f"{errcolor}{'permission denied' if type(e) is PermissionError else 'i/o error'}: {normalcolor}{p}")
+        else:
+          for fn in fns:
+            if fnmatch(fn, spec) and not any(fnmatch(fn, spec2) for spec2 in x_files): #we're considering x_fils but not i_files. 
+              fn2 = os.path.join(p, fn)
+              if not os.path.isdir(fn2):
+                process(os.path.join(p, fn))                                                              # that may be considered inconsistent.
+    else:
+      i_files2.append(spec)
+    i_files2 = i_files2 or ["*"]
+    for path in i_paths:
+      try:
+        fns = os.listdir(path)
+      except (PermissionError, IOError) as e:
+        print(f"{errcolor}{'permission denied' if type(e) is PermissionError else 'i/o error'}: {normalcolor}{path}")
+      else:
+        for fn in fns:
+          p = os.path.join(path, fn)
+          if not os.path.isdir(p):
+            if any(fnmatch(fn, spec) for spec in i_files2) and not any(fnmatch(fn, spec2) for spec2 in x_files):
+              process(p)
   if not s:
     print("No files matched your criteria.")
 except KeyboardInterrupt:
   print()
   print(f"{colors['magenta']}^C")
 if error_printing:
-  print(f"{normalcolor}There were errors printing. `set PYTHONUTF8=1` to resolve this.") 
+  print()
+  print(f"{normalcolor}There were errors printing results. `set PYTHONUTF8=1` to resolve this.") 
 print(colors["default"], end="")
