@@ -71,7 +71,7 @@ args = parser.parse_args()
 
 use_colors = not args.no_color
 
-filteresc = re.compile(r"[\x00-\x1F]") #this doesn't act ually match anything, even though ranges with the left side above 32 match things.
+filteresc = re.compile(r"[\x00-\x1F]") 
 
 if args.no_color:
   d = os.path.dirname(os.path.abspath(__file__))
@@ -200,7 +200,7 @@ def prn(p, ln=None, s=None): #todo: add note about set pythonutf8
       else:
         print(f"{coloncolor}:", end="")
       try:
-        print(f"{normalcolor}{s2}")
+        print(f"{normalcolor}{s2}")#debug
       except UnicodeEncodeError:
         print(f"{errcolor}error printing {'match text' if args.dotall else 'line'}")
         error_printing = True
@@ -357,5 +357,6 @@ except KeyboardInterrupt:
   print()
   print(f"{colors['magenta']}^C")
 if error_printing:
-  print(f"{normalcolor}There were errors printing. `set PYTHONUTF8=1` to resolve this.") 
+  print()
+  print(f"{normalcolor}There were errors printing results. `set PYTHONUTF8=1` to resolve this.") 
 print(colors["default"], end="")
