@@ -117,7 +117,8 @@ if not use_colors:
 if args.set_colors == []:
   args.set_colors = defaultcolors
 if args.set_colors:
-  colors = yescolors
+  if use_colors:
+    colors = yescolors
   if len(args.set_colors) != 6:
     print(f"{errcolor}error: {normalcolor}wrong number of colors{colors['default']}")
     quit()
