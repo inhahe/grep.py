@@ -21,17 +21,14 @@
 #  os.walk has a follow_symlinks option
 #issue: grep.py -R temp will show not only the symlinked dir temp but also teh symlinked dir temp\temp
 #add sanity check to make sure user doesn't use -r AND -R?
-#find out the long parameter names for -r and -R
 #should we have an --include-symlinks or just use -p? both would result in the same thing except for when the files would show up 
 # in the traversal. though we could have walk check all the i_paths for each directory that's a symlink. that shouldn't take a lot more
 # cpu in most cases. that's what we're doing.
 #we could show more error info, because i saw "PermissionError: [WinError 21] The device is not ready: 'd:\\'" when i didn't try/except
-#automatically disable color if detected that output is being redirected to a file?
+#automatically disable color if detected that output is being redirected to a file? can you even detect that?
 #decoding everything as utf-8 distorts the output of binary files
 #would it be better to remove the spaces after colors after error messages?
 #no-color automatically saving the setting might be annoying to users who are using --no-color just to output to a file...
-#does the sparts check actually make the s check completely redundant in all cases? no, i don't think it does in e.g. `-r d:\*.py d:\*.txt`
-# actually, we have to fix that. sparts will make that not work correctly. no *.txt files will be shown.
 #replace [\x00-\x1f] with their \x codes instead of just filtering them out?
 #detect invalid filespec before even searching anything and quit?
 
