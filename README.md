@@ -6,7 +6,7 @@ My own grep in Python.
 - Can specify a list of paths to exclude from search
 - Can make filename matching case-sensitive even on OSs where that's not the standard
 - Has colorized output
-- Can disable color or set your own colors, and it will remember what you set. Can also reset colors to their defaults
+- Can disable color, set your own colors, or load the defaults, and can remember the settings
 - Can make "." match newlines
 
 Other, standard grep functions it can do are
