@@ -9,6 +9,8 @@ My own grep in Python.
 - Can disable color, set your own colors, or load the defaults, and can remember the settings
 - Can make "." match newlines
 
+(Actually, I don't know how many of those things are available in the latest GNU grep.)
+
 Other, standard grep functions it can do are
 - show only files that don't match
 - show only matching files, no match text
