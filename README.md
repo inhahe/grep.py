@@ -1,6 +1,8 @@
 # grep.py
 My own grep in Python.
 
+I made it because none of the greps for Windows I could find worked right. One that I found a long time ago, that I think did recursive directory searching before GNU's did, often crashes, and some regex patterns don't match things that they should match. Another one that I found more recently, but is still a port of a relatively old version of GNU grep, just hangs whenever I try to do recursion. And I figured making a simple one in Python that does what I need ought to be easy. Then I started adding more and more features.
+
 - Can just list all matching files without a regex
 - Can specify a list of paths to search
 - Can specify a list of paths to exclude from search
