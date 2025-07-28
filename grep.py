@@ -35,6 +35,7 @@
 #detect invalid filespec before even searching anything and quit?
 #think about changing set-colors so the user doesn't have to specify all six and remember the order 
 #make error reading from colors file use colors just passed by --set-colors
+#add option for regex matching of filenames? directory names?
 
 import os, re, argparse, fnmatch, sys
 from collections import deque
