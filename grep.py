@@ -130,7 +130,7 @@ if args.set_colors:
       except (PermissionError, IOError) as e: 
         print(f'{errcolor}{"permission error" if type(e) is PermissionError else "i/o error"}: {normalcolor}could not write to colors file "{cf}"{colors["default"]}') 
         
-filteresc = re.compile(r"[\x00-\x09\x0b-\x1f]")
+filteresc = re.compile(r"[\x00-\x09\x0b-\x0c\x0e-\x1f]")
 def fe(s2):
   s3 = []
   laststart = -1
@@ -209,7 +209,7 @@ def walk(directory, parts): #maybe we should make x_paths and i_paths and -r exp
 error_printing = False
 def prn(p, ln=None, s=None): #todo: add note about set pythonutf8
   global error_printing
-  if not s:
+  if s is None:
     try:
       print(f"{normalcolor}{p}")
     except UnicodeEncodeError:
@@ -350,7 +350,7 @@ try:
           sparts.clear()
           for p2, fn in walk(p, (p,)):
             if fnmatch(fn, spec) and not any(fnmatch(fn, spec2) for spec2 in x_files): #we're considering x_files but not i_files. 
-              process(p2)                                                              # it makes sense to me, but it is a bit inconsistent.
+              process(p2)                                                              # it makes sense to me, but it is a bit contradictory.
           sparts.clear()
           wasap = True
       else:
