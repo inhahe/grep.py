@@ -36,6 +36,7 @@
 #think about changing set-colors so the user doesn't have to specify all six and remember the order 
 #make error reading from colors file use colors just passed by --set-colors
 #add option for regex matching of filenames? directory names?
+#show loading/saving grep.py.colors.conf errors at end of scroll instead of beginning?
 
 import os, re, argparse, fnmatch, sys
 from collections import deque
