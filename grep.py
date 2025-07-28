@@ -22,6 +22,8 @@
 #  os.walk has a follow_symlinks option
 #issue: grep.py -R temp will show not only the symlinked dir temp but also teh symlinked dir temp\temp
 #add sanity check to make sure user doesn't use -r AND -R?
+#and make sure not --no-color AND --set-color? 
+#and make sure not --remember without either --no-color or --set-color?
 #should we have an --include-symlinks or just use -p? both would result in the same thing except for when the files would show up 
 # in the traversal. though we could have walk check all the i_paths for each directory that's a symlink. that shouldn't take a lot more
 # cpu in most cases. that's what we're doing.
@@ -75,8 +77,8 @@ max_err = 5
 yescolors = dict(zip("black, darkred, darkgreen, darkyellow, darkblue, darkmagenta, darkcyan, lightgray, gray, red, green, yellow, blue, "
                   "magenta, cyan, white, default".split(", "),
                   list(f"\033[0;{x}m" for x in range(30, 38)) + list(f"\033[1;{x}m" for x in range(30, 38))+["\033[0m"]))
-nocolors = dict(zip("black, darkred, darkgreen, darkyellow, darkblue, darkmagenta, darkcyan, lightgray, gray, red, green, yellow, blue, magenta, cyan, white, default".split(", "), 
-                     [""]*17))
+nocolors = dict(zip("black, darkred, darkgreen, darkyellow, darkblue, darkmagenta, darkcyan, lightgray, gray, red, green, yellow, blue, "
+                    "magenta, cyan, white, default".split(", "), [""]*17))
 defaultcolors = "green gray red default red blue".split()
 use_colors = not args.no_color
 colors = yescolors
@@ -89,14 +91,12 @@ if args.no_color:
        open(cf, "w").write("")
     except (PermissionError, IOError) as e: 
       print(f'{"permission error" if type(e) is PermissionError else "i/o error"}: could not write to colors file "{cf}"{colors["default"]}')    
-      print()
 else:
   if os.path.isfile(cf):
     try:
       readcolors = open(cf).read().split()
     except (PermissionError, IOError) as e: 
-      print(f'{errcolor}{"permission error" if type(e) is PermissionError else "i/o error"}: {colors["default"]}could not read from colors file "{cf}"') 
-      print()
+      print(f'{colors["red"]}{"permission error" if type(e) is PermissionError else "i/o error"}: {colors["default"]}could not read from colors file "{cf}"') 
     else:
       if not readcolors:
         use_colors = False
@@ -117,8 +117,7 @@ if not use_colors:
 if args.set_colors == []:
   args.set_colors = defaultcolors
 if args.set_colors:
-  if use_colors:
-    colors = yescolors
+  colors = yescolors
   if len(args.set_colors) != 6:
     print(f"{errcolor}error: {normalcolor}wrong number of colors{colors['default']}")
     quit()
@@ -129,12 +128,12 @@ if args.set_colors:
         open(cf, "w").write(" ".join(args.set_colors))
       except (PermissionError, IOError) as e: 
         print(f'{errcolor}{"permission error" if type(e) is PermissionError else "i/o error"}: {normalcolor}could not write to colors file "{cf}"{colors["default"]}') 
-        print()
         
 filteresc = re.compile(r"[\x00-\x09\x0b-\x1f]")
 def fe(s2):
   s3 = []
-  start = laststart = 0
+  laststart = -1
+  start = 0
   for m in filteresc.finditer(s2):
     start = m.start()
     s3.extend((fr"{s2[laststart+1:start]}{esccolor}\x{ord(s2[start]):02x}{normalcolor}"))
