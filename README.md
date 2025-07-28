@@ -7,7 +7,7 @@ I made it because none of the greps for Windows I could find worked right. One t
 - Can specify a list of paths to search
 - Can specify a list of paths to exclude from search
 - Can make filename matching case-sensitive even on OSs where that's not the standard
-- Has colorized output
+- Has colorized output, even on Windows if colorama is installed
 - Can disable color, set your own colors, or load the defaults, and can remember the settings
 - Can make "." match newlines
 
