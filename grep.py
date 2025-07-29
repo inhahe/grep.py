@@ -39,6 +39,7 @@ from pickle import NONE
 import os, re, argparse, fnmatch, sys, configparser
 from collections import deque, defaultdict
 from pathlib import PurePath
+from types import NoneType
 
 parser = argparse.ArgumentParser()
 parser.add_argument("regex", nargs="?", help="regular expression pattern to search for")
@@ -63,9 +64,10 @@ parser.add_argument("--allow-match-colors", action=argparse.BooleanOptionalActio
                     "defaults to yes unless --remember was previously used")
 parser.add_argument("--colors", action=argparse.BooleanOptionalAction, help="enable or disable colorized output.")
 parser.add_argument("--set-colors", nargs="*", metavar="color", help="provide six color names to set the colors of filenames, colons, "
-                    "line numbers, match contents, error messages and character escape codes to.\n"
-                    "options are black, darkred, darkgreen, darkyellow, darkblue, darkmagenta, darkcyan, lightgray,  gray, red, green, yellow, blue, magenta, cyan, and white.\n"
-                    "--set-colors with no options to restore colors to their defaults")
+                    "line numbers, match contents, error messages and character escape codes to."
+                    " options are black, darkred, darkgreen, darkyellow, darkblue, darkmagenta, darkcyan, lightgray,  gray, red, green, yellow, blue, magenta, cyan, and white."
+                    " see https://i.sstatic.net/9UVnC.png to see colors for Windows Console, PowerShell, and Ubuntu."
+                    " --set-colors with no options to restore colors to their defaults")
 parser.add_argument("--remember", action="store_true", help="remember color settings for the future")
 
 if len(sys.argv) == 1:
@@ -79,11 +81,11 @@ config = configparser.ConfigParser()
 class colorsclass: 
   pass
 c = colorsclass()
-yescolors = dict(zip("black, darkred, darkgreen, darkyellow, darkblue, darkmagenta, darkcyan, lightgray, gray, red, green, yellow, blue, "
-                  "magenta, cyan, white, default".split(", "),
+yescolors = dict(zip("black, red, green, yellow, blue, magenta, cyan, white, brightblack, brightred, brightgreen, brightyellow, brightblue, "
+                  "brightmagenta, brightcyan, brightwhite, default".split(", "),
                   list(f"\033[0;{x}m" for x in range(30, 38)) + list(f"\033[1;{x}m" for x in range(30, 38))+["\033[0m"]))
 nocolors = defaultdict(str)
-defaultcolors = {"fncolor": "green", "coloncolor": "gray", "linecolor": "red", "normalcolor": "default", "errcolor": "red", "esccolor": "blue"}
+defaultcolors = {"fncolor": "brightgreen", "coloncolor": "brightblack", "linecolor": "brightred", "normalcolor": "default", "errcolor": "brightred", "esccolor": "brightblue"}
 fcolors = defaultcolors
 usecolors = True if args.colors is None else args.colors
 allowmatchcolors = False
@@ -99,7 +101,8 @@ if os.path.isfile(cf):
   else:
     if not confstring == "":
       config.read_string(open(cf, "r").read())
-      fcolors = dict(config["colors"])
+      if args.set_colors is None:
+        fcolors = dict(config["colors"])
       if args.colors is None:
         usecolors = config["general"].getboolean("use_colors")
       if args.allow_match_colors is None:
@@ -129,6 +132,7 @@ if args.set_colors:
     else:
       fcolors = dict(zip("fncolor, coloncolor, lncolor, normalcolor, errcolor, esccolor".split(", "), args.set_colors))
 for fcolor in fcolors: 
+  print("              "+fcolors+"              ")#debug
   setattr(c, fcolor, colors[fcolors[fcolor]])
 saved_conf = False
 if args.remember:
