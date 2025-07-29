@@ -33,7 +33,7 @@
 #show loading/saving grep.py.colors.conf errors at end of scroll instead of beginning?
 #if args.no_color and not args.allow_match_colors then set allow_match_colors = False even if the config file says it's True
 #if there's an error opening the config file, show the error message using the colors specified in --set-colors if they were specified. but that will be really tricky. 
-# because we're also showing errors in the --set-colors parameter in whatever colors are in the config file. and one or the other has to be prossed first.
+# because we're also showing errors in the --set-colors parameter in whatever colors are in the config file. and one or the other has to be processed first.
 
 from pickle import NONE
 import os, re, argparse, fnmatch, sys, configparser
