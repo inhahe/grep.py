@@ -9,7 +9,7 @@ I made it because none of the greps for Windows I could find worked right. One t
 - Can make filename matching case-sensitive even on OSs where that's not the standard
 - Can make "." match newlines
 - Has colorized output, even on Windows if colorama is installed
-- Can disable color, set your own colors, or load the defaults
+- Can enable or disable color, set your own colors, or load the defaults
 - Show characters less than 32 other than \n and \r as colorized escape codes, with an option to pass ANSI color codes through unchanged
 - Can remember all color-related settings
 
