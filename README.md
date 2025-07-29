@@ -7,11 +7,12 @@ I made it because none of the greps for Windows I could find worked right. One t
 - Can specify a list of paths to search
 - Can specify a list of paths to exclude from search
 - Can make filename matching case-sensitive even on OSs where that's not the standard
-- Has colorized output, even on Windows if colorama is installed
-- Can disable color, set your own colors, or load the defaults, and can remember the settings
 - Can make "." match newlines
+- Has colorized output, even on Windows if colorama is installed
+- Can disable color, set your own colors, or load the defaults
 - Show characters less than 32 other than \\n and \\r as colorized escape codes, with an option to pass ANSI color codes through unchanged
-
+- Can remember all color-related settings
+  
 (Actually, I don't know how many of those things are available in the latest GNU grep.)
 
 Other, standard grep functions it can do are
