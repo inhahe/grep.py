@@ -10,7 +10,7 @@ I made it because none of the greps for Windows I could find worked right. One t
 - Has colorized output, even on Windows if colorama is installed
 - Can disable color, set your own colors, or load the defaults, and can remember the settings
 - Can make "." match newlines
-- Show characters less than 32 other than \\n and \\r as colorized escape codes
+- Show characters less than 32 other than \\n and \\r as colorized escape codes, with an option to pass ANSI color codes through unchanged
 
 (Actually, I don't know how many of those things are available in the latest GNU grep.)
 
