@@ -132,7 +132,6 @@ if args.set_colors:
     else:
       fcolors = dict(zip("fncolor, coloncolor, lncolor, normalcolor, errcolor, esccolor".split(", "), args.set_colors))
 for fcolor in fcolors: 
-  print("              "+fcolors+"              ")#debug
   setattr(c, fcolor, colors[fcolors[fcolor]])
 saved_conf = False
 if args.remember:
