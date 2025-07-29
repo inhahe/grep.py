@@ -1,4 +1,3 @@
-
 #todo: 
 #take care of the abuse of global variables?
 #add an option for multiline?
@@ -9,7 +8,6 @@
 #why is listing d:\ so slow even without a regex?
 #add parameter for max_err?
 #test out-of-memory conditions
-#why does `grep.py --s` with anything directory following the s not generate an error? seems like a bug in argparse.
 #detect circular recursion by checking inodes
 #use os.scandir instead? it's faster because it uses a cache, but i'd have to figure out how to extract the filenames. 
 # it returns DirEntry objects.
@@ -22,8 +20,6 @@
 #  os.walk has a follow_symlinks option
 #issue: grep.py -R temp will show not only the symlinked dir temp but also teh symlinked dir temp\temp
 #add sanity check to make sure user doesn't use -r AND -R?
-#and make sure not --no-color AND --set-color? 
-#and make sure not --remember without either --no-color or --set-color?
 #should we have an --include-symlinks or just use -p? both would result in the same thing except for when the files would show up 
 # in the traversal. though we could have walk check all the i_paths for each directory that's a symlink. that shouldn't take a lot more
 # cpu in most cases. that's what we're doing.
@@ -31,15 +27,17 @@
 #automatically disable color if detected that output is being redirected to a file? can you even detect that?
 #decoding everything as utf-8 distorts the output of binary files
 #would it be better to remove the spaces after colors after error messages?
-#no-color automatically saving the setting might be annoying to users who are using --no-color just to output to a file...
 #detect invalid filespec before even searching anything and quit?
 #think about changing set-colors so the user doesn't have to specify all six and remember the order 
-#make error reading from colors file use colors just passed by --set-colors
 #add option for regex matching of filenames? directory names?
 #show loading/saving grep.py.colors.conf errors at end of scroll instead of beginning?
+#if args.no_color and not args.allow_match_colors then set allow_match_colors = False even if the config file says it's True
+#if there's an error opening the config file, show the error message using the colors specified in --set-colors if they were specified. but that will be really tricky. 
+# because we're also showing errors in the --set-colors parameter in whatever colors are in the config file. and one or the other has to be prossed first.
 
-import os, re, argparse, fnmatch, sys
-from collections import deque
+from pickle import NONE
+import os, re, argparse, fnmatch, sys, configparser
+from collections import deque, defaultdict
 from pathlib import PurePath
 
 parser = argparse.ArgumentParser()
@@ -60,14 +58,15 @@ parser.add_argument("-C", "--context", type=int, metavar="num", help="print this
 parser.add_argument("-m", "--max-count", type=int, metavar="num", help="maximum number of matches to show")
 parser.add_argument("-L", "--negate", action="store_true", help="show only files that contain no match")
 parser.add_argument("-l", action="store_true", help="show only filenames")
-parser.add_argument("-n", "--line_numbers", action="store_true", help="show line numbers")
-parser.add_argument("--remember", action="store_true", help="remember color settings for the future")
-parser.add_argument("--no-color", action="store_true", help="disable colorized output. grep.py will remember this setting in the future")
+parser.add_argument("-n", "--line-numbers", action="store_true", help="show line numbers")
+parser.add_argument("--allow-match-colors", action=argparse.BooleanOptionalAction, help="show or don't show ANSI colors if they exist in the match text, but not other escape codes. "
+                    "defaults to yes unless --remember was previously used")
+parser.add_argument("--colors", action=argparse.BooleanOptionalAction, help="enable or disable colorized output.")
 parser.add_argument("--set-colors", nargs="*", metavar="color", help="provide six color names to set the colors of filenames, colons, "
                     "line numbers, match contents, error messages and character escape codes to.\n"
                     "options are black, darkred, darkgreen, darkyellow, darkblue, darkmagenta, darkcyan, lightgray,  gray, red, green, yellow, blue, magenta, cyan, and white.\n"
-                    "grep.py will remember the color settings in the future.\n"
                     "--set-colors with no options to restore colors to their defaults")
+parser.add_argument("--remember", action="store_true", help="remember color settings for the future")
 
 if len(sys.argv) == 1:
   parser.print_help()
@@ -76,69 +75,87 @@ args = parser.parse_args()
 
 max_err = 5
 
+config = configparser.ConfigParser()
+class colorsclass: 
+  pass
+c = colorsclass()
 yescolors = dict(zip("black, darkred, darkgreen, darkyellow, darkblue, darkmagenta, darkcyan, lightgray, gray, red, green, yellow, blue, "
                   "magenta, cyan, white, default".split(", "),
                   list(f"\033[0;{x}m" for x in range(30, 38)) + list(f"\033[1;{x}m" for x in range(30, 38))+["\033[0m"]))
-nocolors = dict(zip("black, darkred, darkgreen, darkyellow, darkblue, darkmagenta, darkcyan, lightgray, gray, red, green, yellow, blue, "
-                    "magenta, cyan, white, default".split(", "), [""]*17))
-defaultcolors = "green gray red default red blue".split()
-use_colors = not args.no_color
+nocolors = defaultdict(str)
+defaultcolors = {"fncolor": "green", "coloncolor": "gray", "linecolor": "red", "normalcolor": "default", "errcolor": "red", "esccolor": "blue"}
+fcolors = defaultcolors
+usecolors = True if args.colors is None else args.colors
+allowmatchcolors = False
 colors = yescolors
-d = os.path.dirname(os.path.abspath(__file__))
-cf = os.path.join(d, "grep.py.colors.conf")
-fncolor, coloncolor, lncolor, normalcolor, errcolor, esccolor = (colors.get(x, colors["default"]) for x in defaultcolors)
-if args.no_color:
-  if args.remember:
-    try:
-       open(cf, "w").write("")
-    except (PermissionError, IOError) as e: 
-      print(f'{"permission error" if type(e) is PermissionError else "i/o error"}: could not write to colors file "{cf}"{colors["default"]}')    
-else:
-  if os.path.isfile(cf):
-    try:
-      readcolors = open(cf).read().split()
-    except (PermissionError, IOError) as e: 
-      print(f'{colors["red"]}{"permission error" if type(e) is PermissionError else "i/o error"}: {colors["default"]}could not read from colors file "{cf}"') 
-    else:
-      if not readcolors:
-        use_colors = False
-      else: 
-        fncolor, coloncolor, lncolor, normalcolor, errcolor, esccolor = (colors.get(x, colors["default"]) for x in readcolors)
-        
-if use_colors and os.name=="nt":
+cf = os.path.join(os.path.dirname(os.path.abspath(__file__)), "grep.py.colors.conf")
+for fcolor in fcolors: 
+  setattr(c, fcolor, colors[fcolors[fcolor]])
+if os.path.isfile(cf):
+  try:
+    confstring = open(cf, "r").read()
+  except (PermissionError, IOError) as e: 
+    print(f'{c.errcolor}{"Permission error" if type(e) is PermissionError else "I/O error"}: {c.normalcolor}could not read from colors file "{cf}"') 
+  else:
+    if not confstring == "":
+      config.read_string(open(cf, "r").read())
+      fcolors = dict(config["colors"])
+      if args.colors is None:
+        usecolors = config["general"].getboolean("use_colors")
+      if args.allow_match_colors is None:
+        allowmatchcolors = config["general"].getboolean("allow_match_colors")
+if usecolors and os.name=="nt":
   try:
     from colorama import just_fix_windows_console
     just_fix_windows_console()
   except:
-    use_colors = False    
+    usecolors = False    
     print("To enable colored output, `pip install colorama`")
     print()
-if not use_colors:
+if not usecolors:
   colors = nocolors
-  fncolor, coloncolor, lncolor, normalcolor, errcolor, esccolor = [""]*6
-if args.set_colors == []:
-  args.set_colors = defaultcolors
 if args.set_colors:
-  colors = yescolors
-  if len(args.set_colors) != 6:
-    print(f"{errcolor}error: {normalcolor}wrong number of colors{colors['default']}")
+  if args.set_colors == []:
+    fcolors = defaultcolors
+    colors = yescolors
+  elif len(args.set_colors) != 6:
+    print(f"{c.errcolor}Error: {c.normalcolor}wrong number of colors{colors['default']}")
     quit()
   else:
-    fncolor, coloncolor, lncolor, normalcolor, errcolor, esccolor = (colors.get(x, colors["default"]) for x in args.set_colors)
-    if args.remember:
-      try:
-        open(cf, "w").write(" ".join(args.set_colors))
-      except (PermissionError, IOError) as e: 
-        print(f'{errcolor}{"permission error" if type(e) is PermissionError else "i/o error"}: {normalcolor}could not write to colors file "{cf}"{colors["default"]}') 
-        
-filteresc = re.compile(r"[\x00-\x09\x0b-\x0c\x0e-\x1f]")
+    invalidcolors = [color for color in args.set_colors if color not in colors]
+    if invalidcolors:
+      print(f"{c.errcolor}Orror: {c.normalcolor}invalid color(s) passed: {', '.join(invalidcolors)}{colors['default']}")
+      quit()
+    else:
+      fcolors = dict(zip("fncolor, coloncolor, lncolor, normalcolor, errcolor, esccolor".split(", "), args.set_colors))
+for fcolor in fcolors: 
+  setattr(c, fcolor, colors[fcolors[fcolor]])
+saved_conf = False
+if args.remember:
+  try:
+    cfo = open(cf, "w")
+  except (PermissionError, IOError) as e: 
+    print(f'{"Permission error" if type(e) is PermissionError else "I/O error"}: could not write to colors file "{cf}"{colors["default"]}')    
+  else:
+    config["general"] = {}
+    config["general"]["use_colors"] = "True" if args.colors is None else str(args.colors)
+    config["general"]["allow_match_colors"] = str(allowmatchcolors)
+    config["colors"] = fcolors
+    config.write(cfo)
+    saved_conf = True
+
+if args.allow_match_colors:
+  filteresc = re.compile(r"[\x00-\x09\x0b-\x0c\x0e-\x1a\x1c-\x1f]|(?:\x1b(?!\[[0-9;]*m))")
+else:
+  filteresc = re.compile(r"[\x00-\x09\x0b-\x0c\x0e-\x1f]")
+
 def fe(s2):
   s3 = []
   laststart = -1
   start = 0
   for m in filteresc.finditer(s2):
     start = m.start()
-    s3.extend((fr"{s2[laststart+1:start]}{esccolor}\x{ord(s2[start]):02x}{normalcolor}"))
+    s3.extend((fr"{s2[laststart+1:start]}{c.esccolor}\x{ord(s2[start]):02x}{c.normalcolor}"))
     laststart = start
   s3.append(s2[laststart+1:])
   return ''.join(s3)
@@ -166,7 +183,7 @@ if args.regex:
   try:
     regexc = re.compile(args.regex.encode("utf-8"), *params)
   except re.PatternError as e:
-    print(f"{errcolor}Regex pattern error: {normalcolor}{', '.join(e.args)}{colors['default']}")
+    print(f"{c.errcolor}Regex pattern error: {c.normalcolor}{', '.join(e.args)}{colors['default']}")
     sys.exit()
 
 i_paths = args.p or ["."]
@@ -178,16 +195,16 @@ lines_since_match = before_context + after_context + 1
 
 def ld(directory):
   if not os.path.exists(directory):
-    print(f"{errcolor}directory doesn't exist: {normalcolor}{directory}")
+    print(f"{c.errcolor}directory doesn't exist: {c.normalcolor}{directory}")
     return []
   elif not os.path.isdir(directory):
-    print(f"{errcolor}is not a directory: {normalcolor}{directory}")
+    print(f"{c.errcolor}is not a directory: {c.normalcolor}{directory}")
     return []
   else:
     try:
       r = os.listdir(directory)
     except (PermissionError, IOError) as e:
-      print(f"{errcolor}{'permission denied' if type(e) is PermissionError else 'i/o error'}: {normalcolor}{directory}")
+      print(f"{c.errcolor}{'Permission denied' if type(e) is PermissionError else 'I/O error'}: {c.normalcolor}{directory}")
       return []
     else:
       return r
@@ -212,28 +229,28 @@ def prn(p, ln=None, s=None): #todo: add note about set pythonutf8
   global error_printing
   if s is None:
     try:
-      print(f"{normalcolor}{p}")
+      print(f"{c.normalcolor}{p}")
     except UnicodeEncodeError:
-      print(f"{errcolor}error printing filename.")            
+      print(f"{c.errcolor}Error printing filename.")            
       error_printing = True
   else:
     s2 = s.decode("utf-8", errors="ignore").rstrip()
     s2 = fe(s2)
     p = p.removeprefix(".\\")
     try:
-      print(f"{fncolor}{p}", end="")
+      print(f"{c.fncolor}{p}", end="")
     except UnicodeEncodeError:
-      print(f"{errcolor}error printing filename", end="")
+      print(f"{c.errcolor}Error printing filename", end="")
       error_printing = True
     else:
       if args.line_numbers:
-        print(f"{coloncolor}:{lncolor}{ln}{coloncolor}:", end="")
+        print(f"{c.coloncolor}:{c.lncolor}{ln}{c.coloncolor}:", end="")
       else:
-        print(f"{coloncolor}:", end="")
+        print(f"{c.coloncolor}:", end="")
       try:
-        print(f"{normalcolor}{s2}")
+        print(f"{c.normalcolor}{s2}")
       except UnicodeEncodeError:
-        print(f"{errcolor}error printing {'match text' if args.dotall else 'line'}")
+        print(f"{c.errcolor}Error printing {'match text' if args.dotall else 'line'}")
         error_printing = True
 def decode(s):
   return s.decode("utf-8", errors="ignore").rstrip()    
@@ -253,7 +270,7 @@ def process(p):
     try:
       inf = open(p, "rb")
     except (PermissionError, IOError) as e:
-      print(f"{errcolor}{'permission denied' if type(e) is PermissionError else 'i/o error'}: {normalcolor}{p}")
+      print(f"{c.errcolor}{'Permission denied' if type(e) is PermissionError else 'I/O error'}: {c.normalcolor}{p}")
     else:
       if not args.dotall:
         if args.l or args.negate:
@@ -270,7 +287,7 @@ def process(p):
               if args.negate:
                 prn(p)
           except MemoryError:
-            print(f"{errcolor}out of memory: {normalcolor}{p}")
+            print(f"{c.errcolor}Out of memory: {c.normalcolor}{p}")
         else:
           outofmemorycount = 0
           num_matches = 0
@@ -313,14 +330,14 @@ def process(p):
             except MemoryError:
               outofmemorycount += 1 
               if outofmemorycount <= max_err:
-                print(f"{errcolor}out of memory on line {lncolor}line_number{errcolor}: {normalcolor}{p}")
+                print(f"{c.errcolor}out of memory on line {c.lncolor}line_number{c.errcolor}: {c.normalcolor}{p}")
               elif outofmemorycount == max_err+1:
-                print(f"{errcolor}max out-of-memory notifications exceeded for file: {normalcolor}{p}")
+                print(f"{c.errcolor}max out-of-memory notifications exceeded for file: {c.normalcolor}{p}")
       else:
         try: 
           data = inf.read()
         except MemoryError:
-          print(f"{errcolor}out of memory: {normalcolor}{p}")
+          print(f"{c.errcolor}Out of memory: {c.normalcolor}{p}")
         else:
           if args.negate:
             if not regexc.search(data):
@@ -346,7 +363,7 @@ try:
       p, spec = os.path.split(pf)
       if p:
         if not spec:
-          print(f"{errcolor}invalid filespec: {normalcolor}{pf}")
+          print(f"{c.errcolor}invalid filespec: {c.normalcolor}{pf}")
         else:
           sparts.clear()
           for p2, fn in walk(p, (p,)):
@@ -367,7 +384,7 @@ try:
       p, spec = os.path.split(pf)
       if p:
         if not spec:
-          print(f"{errcolor}invalid filespec: {normalcolor}{pf}")
+          print(f"{c.errcolor}invalid filespec: {c.normalcolor}{pf}")
         else:
           for fn in os.listdir(p):
             if fnmatch(fn, spec) and not any(fnmatch(fn, spec2) for spec2 in x_files): #we're considering x_fils but not i_files. 
@@ -388,7 +405,12 @@ try:
 except KeyboardInterrupt:
   print()
   print(f"{colors['magenta']}^C")
+if saved_conf:
+  print()
+  print(f'{c.normalcolor}Color settings were saved to "{cf}"')
+elif args.remember:
+  print(f'{c.normalcolor}Failed to save color settings to "{cf}"')
 if error_printing:
   print()
-  print(f"{normalcolor}There were errors printing results. `set PYTHONUTF8=1` to resolve this.{colors['default']}") 
+  print(f"{c.normalcolor}There were errors printing results. `set PYTHONUTF8=1` to resolve this.{colors['default']}") 
 print(colors["default"], end="")
