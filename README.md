@@ -44,7 +44,7 @@ The way recursion works is, say you do `grep.py -r d:\*.html *.txt *.md -p d:\fo
 It will search `d:\` recursively, but only searching for `*.html`. It will exclude `index.html`.   
 It will search `d:\foo\bar` recursively for `*.txt` and `*.md` and will exclude `robots.txt`. 
 
-In other words, it searches the combinatorial product of all the file specs and paths given, minus the combinatorial product of all the specs and paths for exclusion given, except for file specs of the form `path\filespec`, for which it searches only that path recursively for `filespec`, minus any filespecs given for exclusion. It also abides by `-r` vs `-R` and includes symbolically linked paths if they're specified in the paths list in those cases. 
+In other words, it searches the combinatorial product of all the file specs and paths given, minus the combinatorial product of all the specs and paths for exclusion given, except for file specs of the form `path\filespec`, for which it searches only that path recursively for `filespec`, minus any filespecs or paths given for exclusion. `path\filespec` also abides by `-r` vs `-R` and includes symbolically linked paths if they're specified it the paths list in the case of `-r`. 
 
 grep.py will search the current directory by default, but if any paths are specified, it will exclude the current directory (unless the current directory is one of the paths specified).
 
