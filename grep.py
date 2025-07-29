@@ -67,7 +67,7 @@ parser.add_argument("--set-colors", nargs="*", metavar="color", help="provide si
                     "line numbers, match contents, error messages and character escape codes to."
                     " options are black, darkred, darkgreen, darkyellow, darkblue, darkmagenta, darkcyan, lightgray,  gray, red, green, yellow, blue, magenta, cyan, and white."
                     " see https://i.sstatic.net/9UVnC.png to see colors for Windows Console, PowerShell, and Ubuntu."
-                    " --set-colors with no options to restore colors to their defaults")
+                    " --set-colors with no options to use the defaults")
 parser.add_argument("--remember", action="store_true", help="remember color settings for the future")
 
 if len(sys.argv) == 1:
