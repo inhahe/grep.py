@@ -152,17 +152,6 @@ if args.allow_match_colors:
 else:
   filteresc = re.compile(r"[\x00-\x09\x0b-\x0c\x0e-\x1f]")
 
-def fe(s2):
-  s3 = []
-  laststart = -1
-  start = 0
-  for m in filteresc.finditer(s2):
-    start = m.start()
-    s3.extend((fr"{s2[laststart+1:start]}{c.esccolor}\x{ord(s2[start]):02x}{c.normalcolor}"))
-    laststart = start
-  s3.append(s2[laststart+1:])
-  return ''.join(s3)
-
 if args.c:
   from fnmatch import fnmatchcase as fnmatch
 else:
@@ -195,6 +184,17 @@ x_paths = [PurePath(p).parts for p in args.x_paths] if args.x_paths else []
 x_files = args.x_files or []
 
 lines_since_match = before_context + after_context + 1
+
+def fe(s2):
+  s3 = []
+  laststart = -1
+  start = 0
+  for m in filteresc.finditer(s2):
+    start = m.start()
+    s3.extend((fr"{s2[laststart+1:start]}{c.esccolor}\x{ord(s2[start]):02x}{c.normalcolor}"))
+    laststart = start
+  s3.append(s2[laststart+1:])
+  return ''.join(s3)
 
 def ld(directory):
   if not os.path.exists(directory):
@@ -368,9 +368,9 @@ try:
         if not spec:
           print(f"{c.errcolor}invalid filespec: {c.normalcolor}{pf}")
         else:
-          sparts.clear()
+          sparts.clear() #because we're searching different filespecs now, so we need to re-traverse the same directories
           for p2, fn in walk(p, (p,)):
-            if fnmatch(fn, spec) and not any(fnmatch(fn, spec2) for spec2 in x_files): #we're considering x_files but not i_files. 
+            if fnmatch(fn, spec) and not any(fnmatch(fn, spec2) for spec2 in x_files): #we're considering x_files but not i_files. also x_paths but not i_paths. 
               process(p2)                                                              # it makes sense to me, but it is a bit contradictory.
           sparts.clear()
           wasap = True
