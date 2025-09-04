@@ -31,6 +31,7 @@
 #think about changing set-colors so the user doesn't have to specify all six and remember the order 
 #add option for regex matching of filenames? directory names?
 #show loading/saving grep.py.colors.conf errors at end of scroll instead of beginning?
+#show notification to install colorama at the end rather than the beginning?
 #if args.no_color and not args.allow_match_colors then set allow_match_colors = False even if the config file says it's True
 #if there's an error opening the config file, show the error message using the colors specified in --set-colors if they were specified. but that will be really tricky. 
 # because we're also showing errors in the --set-colors parameter in whatever colors are in the config file. and one or the other has to be processed first.
@@ -130,7 +131,7 @@ if args.set_colors:
       print(f"{c.errcolor}Orror: {c.normalcolor}invalid color(s) passed: {', '.join(invalidcolors)}{colors['default']}")
       quit()
     else:
-      fcolors = dict(zip("fncolor, coloncolor, lncolor, normalcolor, errcolor, esccolor".split(", "), args.set_colors))
+      fcolors = dict(zip("fncolor, coloncolor, linecolor, normalcolor, errcolor, esccolor".split(", "), args.set_colors))
 for fcolor in fcolors: 
   setattr(c, fcolor, colors[fcolors[fcolor]])
 saved_conf = False
@@ -247,7 +248,7 @@ def prn(p, ln=None, s=None): #todo: add note about set pythonutf8
       error_printing = True
     else:
       if args.line_numbers:
-        print(f"{c.coloncolor}:{c.lncolor}{ln}{c.coloncolor}:", end="")
+        print(f"{c.coloncolor}:{c.linecolor}{ln}{c.coloncolor}:", end="")
       else:
         print(f"{c.coloncolor}:", end="")
       try:
@@ -333,7 +334,7 @@ def process(p):
             except MemoryError:
               outofmemorycount += 1 
               if outofmemorycount <= max_err:
-                print(f"{c.errcolor}out of memory on line {c.lncolor}line_number{c.errcolor}: {c.normalcolor}{p}")
+                print(f"{c.errcolor}out of memory on line {c.linecolor}line_number{c.errcolor}: {c.normalcolor}{p}")
               elif outofmemorycount == max_err+1:
                 print(f"{c.errcolor}max out-of-memory notifications exceeded for file: {c.normalcolor}{p}")
       else:
