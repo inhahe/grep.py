@@ -1,26 +1,40 @@
-#todo: 
+#claude.ai implemented searching for multiple patterns within x lines of each other for me. here's what he said:
+#How it works:
+#  - All patterns (positional regex + all -e patterns) are compiled into a regexcs list.
+#  - Without -P: multiple patterns are OR'd — any line matching any pattern is shown, using the existing context buffer
+#  logic unchanged.
+#  - With -P: a history buffer of proximity + before_context + 1 lines is maintained. For each line, all regexes are
+#  checked and last_match[idx] is updated. Matches older than proximity lines expire. When all regexes have a live match,
+#   the window (from earliest match to latest match, plus before/after context) is printed from the buffer. After
+#  printing, last_match is cleared to find the next occurrence. The -- separator is printed between non-contiguous match
+#  groups.
+# - -l, -L, --dotall, -m, -B, -A, -C all work with the new modes.
+
+#todo:
+#fix 'grep -il centre old\*' returned a filename from the current directory along with filenames from old
+#make it so 'grep.py -f *' prints every line of every file instead of just printing filenames
 #take care of the abuse of global variables?
 #add an option for multiline?
 #showing multiline output with --dotall is ugly, since the first line isn't aligned with the next lines.
-#grep.exe automatically detects binary files and just reports whether they match or not. 
+#grep.exe automatically detects binary files and just reports whether they match or not.
 #distinguish between file names and directory names in error messages?
 #should we be nice to the users and change --x_paths and --x_files to --x-paths and --x-files?
 #why is listing d:\ so slow even without a regex?
 #add parameter for max_err?
 #test out-of-memory conditions
 #detect circular recursion by checking inodes
-#use os.scandir instead? it's faster because it uses a cache, but i'd have to figure out how to extract the filenames. 
+#use os.scandir instead? it's faster because it uses a cache, but i'd have to figure out how to extract the filenames.
 # it returns DirEntry objects.
 # also, if it uses a cache, could some files be missing from the scan? texnickal texnical said yes.
-# apparently i could use os.walk and not search certain directories because 
+# apparently i could use os.walk and not search certain directories because
 # "<TeXNickAL> (You're allowed to alter the list of son-nodes it returns at each step.)"
-#  “When topdown is True, the caller can modify the dirnames list in-place (perhaps using del or slice assignment), 
-#  and walk() will only recurse into the subdirectories whose names remain in dirnames”
+#  "When topdown is True, the caller can modify the dirnames list in-place (perhaps using del or slice assignment),
+#  and walk() will only recurse into the subdirectories whose names remain in dirnames"
 #  but os.walk uses scandir
 #  os.walk has a follow_symlinks option
 #issue: grep.py -R temp will show not only the symlinked dir temp but also teh symlinked dir temp\temp
 #add sanity check to make sure user doesn't use -r AND -R?
-#should we have an --include-symlinks or just use -p? both would result in the same thing except for when the files would show up 
+#should we have an --include-symlinks or just use -p? both would result in the same thing except for when the files would show up
 # in the traversal. though we could have walk check all the i_paths for each directory that's a symlink. that shouldn't take a lot more
 # cpu in most cases. that's what we're doing.
 #we could show more error info, because i saw "PermissionError: [WinError 21] The device is not ready: 'd:\\'" when i didn't try/except
@@ -28,12 +42,12 @@
 #decoding everything as utf-8 distorts the output of binary files
 #would it be better to remove the spaces after colors after error messages?
 #detect invalid filespec before even searching anything and quit?
-#think about changing set-colors so the user doesn't have to specify all six and remember the order 
+#think about changing set-colors so the user doesn't have to specify all six and remember the order
 #add option for regex matching of filenames? directory names?
 #show loading/saving grep.py.colors.conf errors at end of scroll instead of beginning?
 #show notification to install colorama at the end rather than the beginning?
 #if args.no_color and not args.allow_match_colors then set allow_match_colors = False even if the config file says it's True
-#if there's an error opening the config file, show the error message using the colors specified in --set-colors if they were specified. but that will be really tricky. 
+#if there's an error opening the config file, show the error message using the colors specified in --set-colors if they were specified. but that will be really tricky.
 # because we're also showing errors in the --set-colors parameter in whatever colors are in the config file. and one or the other has to be processed first.
 
 from pickle import NONE
@@ -45,6 +59,8 @@ from types import NoneType
 parser = argparse.ArgumentParser()
 parser.add_argument("regex", nargs="?", help="regular expression pattern to search for")
 parser.add_argument("files", nargs="*", help="search files matching these filename patterns")
+parser.add_argument("-e", "--expression", action="append", metavar="pattern", help="specify additional regex patterns. can be repeated. without -P, any match is shown. with -P, all patterns must appear within the proximity window")
+parser.add_argument("-P", "--proximity", type=int, metavar="num", help="all specified patterns must occur within num lines of each other")
 parser.add_argument("-f", nargs="*", help="search files matching these filename patterns. this option exists so you can search files even if you don't specify a regex")
 parser.add_argument("-R", "--dereference-recursive", action="store_true", help="search directories recursively")
 parser.add_argument("-r", "--recursive", action="store_true", help="search directories recursively, ignoring symlinked directories unless they're explicitly included")
@@ -79,7 +95,7 @@ args = parser.parse_args()
 max_err = 5
 
 config = configparser.ConfigParser()
-class colorsclass: 
+class colorsclass:
   pass
 c = colorsclass()
 yescolors = dict(zip("black, red, green, yellow, blue, magenta, cyan, white, brightblack, brightred, brightgreen, brightyellow, brightblue, "
@@ -92,13 +108,13 @@ usecolors = True if args.colors is None else args.colors
 allowmatchcolors = False
 colors = yescolors
 cf = os.path.join(os.path.dirname(os.path.abspath(__file__)), "grep.py.colors.conf")
-for fcolor in fcolors: 
+for fcolor in fcolors:
   setattr(c, fcolor, colors[fcolors[fcolor]])
 if os.path.isfile(cf):
   try:
     confstring = open(cf, "r").read()
-  except (PermissionError, IOError) as e: 
-    print(f'{c.errcolor}{"Permission error" if type(e) is PermissionError else "I/O error"}: {c.normalcolor}could not read from colors file "{cf}"') 
+  except (PermissionError, IOError) as e:
+    print(f'{c.errcolor}{"Permission error" if type(e) is PermissionError else "I/O error"}: {c.normalcolor}could not read from colors file "{cf}"')
   else:
     if not confstring == "":
       config.read_string(open(cf, "r").read())
@@ -113,12 +129,12 @@ if usecolors and os.name=="nt":
     from colorama import just_fix_windows_console
     just_fix_windows_console()
   except:
-    usecolors = False    
+    usecolors = False
     print("To enable colored output, `pip install colorama`")
     print()
 if not usecolors:
   colors = nocolors
-if args.set_colors:
+if args.set_colors is not None:
   if args.set_colors == []:
     fcolors = defaultcolors
     colors = yescolors
@@ -132,14 +148,14 @@ if args.set_colors:
       quit()
     else:
       fcolors = dict(zip("fncolor, coloncolor, linecolor, normalcolor, errcolor, esccolor".split(", "), args.set_colors))
-for fcolor in fcolors: 
+for fcolor in fcolors:
   setattr(c, fcolor, colors[fcolors[fcolor]])
 saved_conf = False
 if args.remember:
   try:
     cfo = open(cf, "w")
-  except (PermissionError, IOError) as e: 
-    print(f'{"Permission error" if type(e) is PermissionError else "I/O error"}: could not write to colors file "{cf}"{colors["default"]}')    
+  except (PermissionError, IOError) as e:
+    print(f'{"Permission error" if type(e) is PermissionError else "I/O error"}: could not write to colors file "{cf}"{colors["default"]}')
   else:
     config["general"] = {}
     config["general"]["use_colors"] = "True" if args.colors is None else str(args.colors)
@@ -148,7 +164,10 @@ if args.remember:
     config.write(cfo)
     saved_conf = True
 
-if args.allow_match_colors:
+if args.allow_match_colors is not None:
+  allowmatchcolors = args.allow_match_colors
+
+if allowmatchcolors:
   filteresc = re.compile(r"[\x00-\x09\x0b-\x0c\x0e-\x1a\x1c-\x1f]|(?:\x1b(?!\[[0-9;]*m))")
 else:
   filteresc = re.compile(r"[\x00-\x09\x0b-\x0c\x0e-\x1f]")
@@ -167,24 +186,32 @@ if args.context:
   before_context = after_context = args.context or 0
 
 params = []
-if args.dotall:  
+if args.dotall:
   params.append(re.DOTALL)
 if args.i:
   params.append(re.I)
 
+all_patterns = []
 if args.regex:
+  all_patterns.append(args.regex)
+if args.expression:
+  all_patterns.extend(args.expression)
+
+regexcs = []
+for pattern in all_patterns:
   try:
-    regexc = re.compile(args.regex.encode("utf-8"), *params)
+    regexc = re.compile(pattern.encode("utf-8"), *params)
   except re.PatternError as e:
-    print(f"{c.errcolor}Regex pattern error: {c.normalcolor}{', '.join(e.args)}{colors['default']}")
+    print(f"{c.errcolor}Regex pattern error in '{pattern}': {c.normalcolor}{', '.join(e.args)}{colors['default']}")
     sys.exit()
+  regexcs.append(regexc)
+
+proximity = args.proximity or 0
 
 i_paths = args.p or ["."]
 i_files = (((args.files or []) + (args.f or []))) or ["*"]
 x_paths = [PurePath(p).parts for p in args.x_paths] if args.x_paths else []
 x_files = args.x_files or []
-
-lines_since_match = before_context + after_context + 1
 
 def fe(s2):
   s3 = []
@@ -217,17 +244,17 @@ sparts = set()
 def walk(directory, parts): #maybe we should make x_paths and i_paths and -r explicitly passed here even though they're
   global sparts             # never going to be changed.
   if not parts in sparts:
-    for fn in ld(directory):                         
+    for fn in ld(directory):
       p = os.path.join(directory, fn)
       if os.path.isfile(p):
         yield (p, fn)
       elif os.path.isdir(p):
         parts2 = parts+(fn,)
         if not (args.recursive and os.path.islink(p) and not any(parts2[-len(x):] == x for x in i_paths)): #todo: is this right?
-          if not any(parts2[-len(x):] == x for x in x_paths): #this is really dirty but i don't know of a better solution do excludes 
+          if not any(parts2[-len(x):] == x for x in x_paths): #this is really dirty but i don't know of a better solution do excludes
             yield from walk(p, parts2)                        # how I want
   sparts.add(parts)
- 
+
 error_printing = False
 def prn(p, ln=None, s=None): #todo: add note about set pythonutf8
   global error_printing
@@ -235,7 +262,7 @@ def prn(p, ln=None, s=None): #todo: add note about set pythonutf8
     try:
       print(f"{c.normalcolor}{p}")
     except UnicodeEncodeError:
-      print(f"{c.errcolor}Error printing filename.")            
+      print(f"{c.errcolor}Error printing filename.")
       error_printing = True
   else:
     s2 = s.decode("utf-8", errors="ignore").rstrip()
@@ -257,17 +284,15 @@ def prn(p, ln=None, s=None): #todo: add note about set pythonutf8
         print(f"{c.errcolor}Error printing {'match text' if args.dotall else 'line'}")
         error_printing = True
 def decode(s):
-  return s.decode("utf-8", errors="ignore").rstrip()    
+  return s.decode("utf-8", errors="ignore").rstrip()
 
 def process(p):
-  global printing_context, lines_since_match, tracking_context, s
-  lines_since_match = before_context + after_context + 1
+  global s
   matched_one = False
-  context_buffer = deque([None]*(max(before_context, after_context)+1))
   line_number = 0
   p = p.removeprefix(".\\")
   if p not in s:
-    if not args.regex:
+    if not regexcs:
       prn(p)
       s.add(p)
       return
@@ -278,88 +303,164 @@ def process(p):
     else:
       if not args.dotall:
         if args.l or args.negate:
-          try: 
-            m = False
-            for line in inf:
-              m = regexc.search(line)
-              if m:
-                break
-            if m:
-              if args.l:
-                prn(p)
+          try:
+            if args.proximity is not None:
+              # proximity mode: check if all patterns appear within proximity lines
+              last_match = {}
+              for line in inf:
+                line_number += 1
+                for idx, rc in enumerate(regexcs):
+                  if rc.search(line):
+                    last_match[idx] = line_number
+                # expire old matches
+                to_expire = [idx for idx, ln in last_match.items() if line_number - ln >= args.proximity]
+                for idx in to_expire:
+                  del last_match[idx]
+                if len(last_match) == len(regexcs):
+                  if args.l:
+                    prn(p)
+                  break
+              else:
+                if args.negate:
+                  prn(p)
             else:
-              if args.negate:
-                prn(p)
+              # OR mode: any regex match counts
+              m = False
+              for line in inf:
+                m = any(rc.search(line) for rc in regexcs)
+                if m:
+                  break
+              if m:
+                if args.l:
+                  prn(p)
+              else:
+                if args.negate:
+                  prn(p)
           except MemoryError:
             print(f"{c.errcolor}Out of memory: {c.normalcolor}{p}")
         else:
           outofmemorycount = 0
           num_matches = 0
-          while True:
-            try:
-              line_number += 1
-              line = inf.readline()
-              if not line:
-                break
-              m = regexc.search(line)
-              if m:
-                num_matches += 1
-                if args.max_count is not None and num_matches > args.max_count:
+          if args.proximity is not None:
+            # proximity mode: find windows where all patterns match within proximity lines
+            buf_size = args.proximity + before_context + 1
+            prox_buffer = deque(maxlen=buf_size)
+            last_match = {}  # regex index -> line_number
+            last_printed_line = 0
+            after_remaining = 0
+            while True:
+              try:
+                line_number += 1
+                line = inf.readline()
+                if not line:
                   break
-              if before_context or after_context:
-                lines_since_match += 1
-                context_buffer.popleft()
-                context_buffer.append(line)
-                if m: 
-                  if lines_since_match > before_context + after_context:
-                    if matched_one: #if I weren't retarded, I could based this on lines_since_matched, before_context \and after_context alone.  i think?
-                      print("--")
-                    for l in list(context_buffer)[-before_context-1:]:                 
-                      if l: 
-                        prn(p, line_number, l)
-                  elif after_context < lines_since_match <= after_context + before_context:
-                    for l in list(context_buffer)[-(lines_since_match-after_context):]:                 
-                      if l:  
-                        prn(p, line_number, l)
-                  else:
-                    prn(p, line_number, l)
-                  lines_since_match = 0
-                  matched_one = True
-                else:
-                  if lines_since_match <= after_context:
-                    prn(p, line_number, line)
-              else:
-                if m:
+                prox_buffer.append((line_number, line))
+                # check each regex against this line
+                for idx, rc in enumerate(regexcs):
+                  if rc.search(line):
+                    last_match[idx] = line_number
+                # expire matches that have fallen outside the proximity window
+                to_expire = [idx for idx, ln in last_match.items() if line_number - ln >= args.proximity]
+                for idx in to_expire:
+                  del last_match[idx]
+                # handle after_context from a previous proximity match
+                if after_remaining > 0 and line_number > last_printed_line:
                   prn(p, line_number, line)
-            except MemoryError:
-              outofmemorycount += 1 
-              if outofmemorycount <= max_err:
-                print(f"{c.errcolor}out of memory on line {c.linecolor}line_number{c.errcolor}: {c.normalcolor}{p}")
-              elif outofmemorycount == max_err+1:
-                print(f"{c.errcolor}max out-of-memory notifications exceeded for file: {c.normalcolor}{p}")
+                  last_printed_line = line_number
+                  after_remaining -= 1
+                # check for complete proximity match
+                elif len(last_match) == len(regexcs):
+                  num_matches += 1
+                  if args.max_count is not None and num_matches > args.max_count:
+                    break
+                  min_ln = min(last_match.values())
+                  max_ln = max(last_match.values())
+                  start_ln = max(min_ln - before_context, last_printed_line + 1)
+                  if matched_one and start_ln > last_printed_line + 1:
+                    print("-----")
+                  for buf_ln, buf_line in prox_buffer:
+                    if start_ln <= buf_ln <= max_ln and buf_ln > last_printed_line:
+                      prn(p, buf_ln, buf_line)
+                  last_printed_line = max(last_printed_line, max_ln)
+                  matched_one = True
+                  after_remaining = after_context
+                  last_match.clear()
+              except MemoryError:
+                outofmemorycount += 1
+                if outofmemorycount <= max_err:
+                  print(f"{c.errcolor}out of memory on line {c.linecolor}{line_number}{c.errcolor}: {c.normalcolor}{p}")
+                elif outofmemorycount == max_err+1:
+                  print(f"{c.errcolor}max out-of-memory notifications exceeded for file: {c.normalcolor}{p}")
+          else:
+            # normal mode (single or OR'd patterns)
+            before_buf = deque()
+            last_printed_line = 0
+            after_remaining = 0
+            while True:
+              try:
+                line_number += 1
+                line = inf.readline()
+                if not line:
+                  break
+                m = any(rc.search(line) for rc in regexcs)
+                if m:
+                  num_matches += 1
+                  if args.max_count is not None and num_matches > args.max_count:
+                    break
+                if before_context or after_context:
+                  if m:
+                    start = max(line_number - before_context, last_printed_line + 1)
+                    if matched_one and start > last_printed_line + 1:
+                      print("-----")
+                    for bln, bline in before_buf:
+                      if bln >= start and bln > last_printed_line:
+                        prn(p, bln, bline)
+                        last_printed_line = bln
+                    if line_number > last_printed_line:
+                      prn(p, line_number, line)
+                      last_printed_line = line_number
+                    after_remaining = after_context
+                    matched_one = True
+                  elif after_remaining > 0:
+                    prn(p, line_number, line)
+                    last_printed_line = line_number
+                    after_remaining -= 1
+                  before_buf.append((line_number, line))
+                  if len(before_buf) > before_context:
+                    before_buf.popleft()
+                else:
+                  if m:
+                    prn(p, line_number, line)
+              except MemoryError:
+                outofmemorycount += 1
+                if outofmemorycount <= max_err:
+                  print(f"{c.errcolor}out of memory on line {c.linecolor}{line_number}{c.errcolor}: {c.normalcolor}{p}")
+                elif outofmemorycount == max_err+1:
+                  print(f"{c.errcolor}max out-of-memory notifications exceeded for file: {c.normalcolor}{p}")
       else:
-        try: 
+        try:
           data = inf.read()
         except MemoryError:
           print(f"{c.errcolor}Out of memory: {c.normalcolor}{p}")
         else:
           if args.negate:
-            if not regexc.search(data):
+            if not any(rc.search(data) for rc in regexcs):
               prn(p)
           elif args.l:
-            if regexc.search(data):
+            if any(rc.search(data) for rc in regexcs):
               prn(p)
           else:
-            for x in regexc.findall(data):
-              prn(p, None, x)
+            for rc in regexcs:
+              for x in rc.findall(data):
+                prn(p, None, x)
   s.add(p)
 
 s = set()
 
-if not (args.regex or args.p or args.x_files or args.x_paths or args.files or args.f or args.l or args.recursive or args.dereference_recursive):
+if not (regexcs or args.p or args.x_files or args.x_paths or args.files or args.f or args.l or args.recursive or args.dereference_recursive):
   quit()
 
-try: 
+try:
   wasap = False
   i_files2 = []
   if args.recursive or args.dereference_recursive:
@@ -371,7 +472,7 @@ try:
         else:
           sparts.clear() #because we're searching different filespecs now, so we need to re-traverse the same directories
           for p2, fn in walk(p, (p,)):
-            if fnmatch(fn, spec) and not any(fnmatch(fn, spec2) for spec2 in x_files): #we're considering x_files but not i_files. also x_paths but not i_paths. 
+            if fnmatch(fn, spec) and not any(fnmatch(fn, spec2) for spec2 in x_files): #we're considering x_files but not i_files. also x_paths but not i_paths.
               process(p2)                                                              # it makes sense to me, but it is a bit contradictory.
           sparts.clear()
           wasap = True
@@ -391,12 +492,12 @@ try:
           print(f"{c.errcolor}invalid filespec: {c.normalcolor}{pf}")
         else:
           for fn in os.listdir(p):
-            if fnmatch(fn, spec) and not any(fnmatch(fn, spec2) for spec2 in x_files): #we're considering x_fils but not i_files. 
+            if fnmatch(fn, spec) and not any(fnmatch(fn, spec2) for spec2 in x_files): #we're considering x_fils but not i_files.
               fn2 = os.path.join(p, fn)
               if not os.path.isdir(fn2):
-                process(os.path.join(p, fn))                                                           
-    else:
-      i_files2.append(spec)
+                process(os.path.join(p, fn))
+      else:
+        i_files2.append(spec)
     i_files2 = i_files2 or ["*"]
     for path in i_paths:
       for fn in ld(path):
@@ -416,5 +517,5 @@ elif args.remember:
   print(f'{c.normalcolor}Failed to save color settings to "{cf}"')
 if error_printing:
   print()
-  print(f"{c.normalcolor}There were errors printing results. `set PYTHONUTF8=1` to resolve this.{colors['default']}") 
+  print(f"{c.normalcolor}There were errors printing results. `set PYTHONUTF8=1` to resolve this.{colors['default']}")
 print(colors["default"], end="")
