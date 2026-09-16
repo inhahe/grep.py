@@ -51,3 +51,9 @@ grep.py will search the current directory by default, but if any paths are speci
 -----
 
 All this in less than 400 lines of Python.
+
+
+## License
+
+MIT - see [LICENSE](LICENSE). Free to use, modify and redistribute; provided
+as-is, with no warranty.
