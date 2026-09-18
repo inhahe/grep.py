@@ -1,0 +1,19 @@
+
+# Local-only. We publish straight from this directory now instead of copying
+# a filtered subset into D:\github, so these are excluded here instead.
+testdir/
+.vs/
+__pycache__/
+temp/
+.claude/
+bugrepro/
+build.bat
+cwdfile.txt
+design.md
+go.bat
+/grep.[0-9]*.py
+/grep.*.works.py
+ascii color table.png
+todo*.txt
+*.log
+*.exe

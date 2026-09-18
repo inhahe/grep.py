@@ -19,6 +19,7 @@
 #include <set>
 #include <sstream>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -28,6 +29,29 @@
 #endif
 
 namespace fs = std::filesystem;
+
+// ── Path encoding ───────────────────────────────────────────────────────
+// Every path in this program is carried around as a narrow std::string holding
+// UTF-8, and converted to fs::path only at the moment the filesystem is
+// touched.  This matters on Windows: fs::path::string() converts wide -> the
+// active ANSI code page and THROWS std::system_error for any character the code
+// page can't represent (e.g. U+22C6 '*' in a filename under cp1252).  Using it
+// in the directory listing meant one awkwardly-named file made grep silently
+// report nothing at all for the entire directory, because the exception unwound
+// past the whole search into main's catch-all.  u8string() never throws.
+//
+// Correspondingly, never hand a narrow path straight to ifstream on Windows --
+// it would be interpreted as ANSI and fail to open these files.  Go through
+// from_utf8() so the wide fs::path overload is used.
+
+static std::string to_utf8(const fs::path& p) {
+    auto s = p.u8string();                      // std::string in C++17,
+    return std::string(s.begin(), s.end());     // std::u8string in C++20
+}
+
+static fs::path from_utf8(const std::string& s) {
+    return fs::u8path(s);
+}
 
 // ── Signal handling ─────────────────────────────────────────────────────
 
@@ -126,6 +150,28 @@ static bool enable_ansi() {
     if (!GetConsoleMode(h, &mode)) return false;
     return SetConsoleMode(h, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING) != 0;
 }
+
+static std::string wide_to_utf8(const wchar_t* w) {
+    if (!w || !*w) return {};
+    int n = WideCharToMultiByte(CP_UTF8, 0, w, -1, nullptr, 0, nullptr, nullptr);
+    if (n <= 1) return {};
+    std::string out((size_t)n - 1, '\0');
+    WideCharToMultiByte(CP_UTF8, 0, w, -1, out.data(), n, nullptr, nullptr);
+    return out;
+}
+
+// Everything we print is UTF-8 (see the "Path encoding" note), so the console
+// has to be told.  The previous code page is restored on the way out so we
+// don't leave the user's console reconfigured behind us.
+struct ConsoleCodePage {
+    UINT saved = 0;
+    ConsoleCodePage() : saved(GetConsoleOutputCP()) {
+        if (saved != CP_UTF8) SetConsoleOutputCP(CP_UTF8);
+    }
+    ~ConsoleCodePage() {
+        if (saved && saved != CP_UTF8) SetConsoleOutputCP(saved);
+    }
+};
 #endif
 
 // ── Config file (simple INI) ────────────────────────────────────────────
@@ -134,7 +180,7 @@ struct IniFile {
     std::map<std::string, std::map<std::string, std::string>> sections;
 
     bool load(const std::string& path) {
-        std::ifstream f(path);
+        std::ifstream f(from_utf8(path));
         if (!f) return false;
         std::string section, line;
         while (std::getline(f, line)) {
@@ -158,7 +204,7 @@ struct IniFile {
     }
 
     bool save(const std::string& path) const {
-        std::ofstream f(path);
+        std::ofstream f(from_utf8(path));
         if (!f) return false;
         for (auto& [sec, kvs] : sections) {
             f << "[" << sec << "]\n";
@@ -254,8 +300,8 @@ using PathParts = std::vector<std::string>;
 
 static PathParts to_parts(const std::string& p) {
     PathParts parts;
-    for (auto& c : fs::path(p))
-        if (!c.empty()) parts.push_back(c.string());
+    for (auto& c : from_utf8(p))
+        if (!c.empty()) parts.push_back(to_utf8(c));
     return parts;
 }
 
@@ -316,10 +362,14 @@ static void print_help() {
 "options:\n"
 "  -h, --help               show this help message and exit\n"
 "  -e, --expression PATTERN specify additional regex patterns (repeatable).\n"
-"                           without -P, any match is shown. with -P, all\n"
-"                           patterns must appear within the proximity window\n"
-"  -P, --proximity NUM      all specified patterns must occur within NUM lines\n"
-"                           of each other\n"
+"                           ALL patterns must be present before any results are\n"
+"                           shown for a file: without -P they must appear\n"
+"                           somewhere in the file, with -P within the proximity\n"
+"                           window. to match any of several alternatives\n"
+"                           instead, put them in one regex separated by '|'\n"
+"  -P, --proximity NUM      require all patterns to occur within NUM lines of\n"
+"                           each other instead of anywhere in the file. only\n"
+"                           matching lines inside a satisfying window are shown\n"
 "  -f [PATTERN ...]         search files matching these filename patterns.\n"
 "                           this option exists so you can search files even if\n"
 "                           you don't specify a regex\n"
@@ -620,26 +670,77 @@ static void prn(const std::string& p, int lineno, const std::string& raw) {
 
 static std::vector<std::string> ld(const std::string& directory) {
     std::error_code ec;
-    if (!fs::exists(directory, ec)) {
+    fs::path dirp = from_utf8(directory);
+    if (!fs::exists(dirp, ec)) {
         std::cout << g_c.err << "directory doesn't exist: "
                   << g_c.normal << directory << "\n";
         return {};
     }
-    if (!fs::is_directory(directory, ec)) {
+    if (!fs::is_directory(dirp, ec)) {
         std::cout << g_c.err << "is not a directory: "
                   << g_c.normal << directory << "\n";
         return {};
     }
     std::vector<std::string> entries;
     try {
-        for (auto& de : fs::directory_iterator(directory)) {
-            entries.push_back(de.path().filename().string());
-        }
+        // Skip unreadable subentries rather than aborting the whole listing.
+        auto it = fs::directory_iterator(
+            dirp, fs::directory_options::skip_permission_denied);
+        for (auto& de : it)
+            entries.push_back(to_utf8(de.path().filename()));
     } catch (const fs::filesystem_error&) {
         std::cout << g_c.err << "Permission denied: "
                   << g_c.normal << directory << "\n";
+    } catch (const std::exception& e) {
+        // Never let a listing failure escape: it would unwind past the entire
+        // search and produce a silent empty result.
+        std::cout << g_c.err << "Error listing directory: "
+                  << g_c.normal << directory << g_c.err << " (" << e.what() << ")\n";
     }
     return entries;
+}
+
+// ── Filespec probe (diagnostics only) ───────────────────────────────────
+// How many existing files 'pattern' matches when treated as a filespec, or -1
+// if it can't be tried.  Used only to explain a regex compile failure: the
+// positional argument fills the 'regex' slot before 'files', so when every
+// pattern was supplied with -e a lone trailing filespec gets compiled as a
+// regex and fails for reasons that look unrelated to what the user typed (e.g.
+// "bad escape \m" for a Windows path).  Deliberately silent -- unlike ld(),
+// this must not print "directory doesn't exist" while merely guessing.
+
+static long filespec_hit_count(const std::string& pattern) {
+    auto [dir, spec] = split_filespec(pattern);
+    if (spec.empty()) return -1;
+    if (dir.empty()) dir = ".";
+    std::error_code ec;
+    fs::path dirp = from_utf8(dir);
+    if (!fs::is_directory(dirp, ec)) return -1;
+    long hits = 0;
+    try {
+        auto it = fs::directory_iterator(
+            dirp, fs::directory_options::skip_permission_denied, ec);
+        if (ec) return -1;
+        for (auto& de : it)
+            if (fnmatch_match(spec, to_utf8(de.path().filename()), g_case_sensitive_fn))
+                ++hits;
+    } catch (const std::exception&) {
+        return -1;
+    }
+    return hits;
+}
+
+// Explain that 'pattern' was consumed as the search regex, and how to pass it as
+// a filespec instead.  Only called when it demonstrably names files.
+static void print_slot_hint(const std::string& pattern, long hits) {
+    std::cout << g_c.normal << "It matches " << hits << " existing file"
+              << (hits == 1 ? "" : "s")
+              << ", but the first non-option argument is always the\n"
+                 "search regex -- even when every pattern was given with -e. "
+                 "Pass filename patterns with -f:\n"
+                 "  grep";
+    for (auto& x : g_args.expressions) std::cout << " -e " << x;
+    std::cout << " -f \"" << pattern << "\"\n";
 }
 
 // ── Recursive walk ──────────────────────────────────────────────────────
@@ -655,16 +756,17 @@ static void walk(const std::string& directory, PathParts parts, WalkCB cb) {
 
     for (auto& fn : ld(directory)) {
         if (g_interrupted) return;
-        std::string p = (fs::path(directory) / fn).string();
+        fs::path joined = from_utf8(directory) / from_utf8(fn);
+        std::string p = to_utf8(joined);
         std::error_code ec;
-        if (fs::is_regular_file(p, ec)) {   // follows symlinks (matches os.path.isfile)
+        if (fs::is_regular_file(joined, ec)) {  // follows symlinks (matches os.path.isfile)
             cb(p, fn);
-        } else if (fs::is_directory(p, ec)) {
+        } else if (fs::is_directory(joined, ec)) {
             PathParts parts2 = parts;
             parts2.push_back(fn);
 
             // With -r, skip symlinked directories unless explicitly in -p
-            if (g_args.recursive && fs::is_symlink(fs::symlink_status(p, ec)) &&
+            if (g_args.recursive && fs::is_symlink(fs::symlink_status(joined, ec)) &&
                 !suffix_matches_any(parts2, g_i_path_parts)) {
                 continue;
             }
@@ -676,6 +778,32 @@ static void walk(const std::string& directory, PathParts parts, WalkCB cb) {
         }
     }
     g_sparts.insert(std::move(parts));
+}
+
+// ── Whole-file AND gate ─────────────────────────────────────────────────
+// Consume a line-based stream and report whether every compiled regex matched
+// somewhere in it.  Bails out as soon as the last outstanding pattern is found,
+// so files that do satisfy the gate usually aren't read to the end.
+//
+// This always gives the honest answer, including for a single pattern.  Do NOT
+// add a "g_regexes.size() < 2 -> return true" shortcut here: -l/-L call this as
+// their *only* match test, so short-circuiting makes single-pattern -l list
+// every file and -L list none.  Callers that follow up with a per-line pass
+// (the full-output path) skip this call themselves when there's only one
+// pattern, because that later pass does the real filtering.
+
+static bool all_present_lines(std::ifstream& inf) {
+    std::set<size_t> unmatched;
+    for (size_t i = 0; i < g_regexes.size(); ++i) unmatched.insert(i);
+    std::string line;
+    while (!unmatched.empty() && std::getline(inf, line)) {
+        if (g_interrupted) return false;
+        for (auto it = unmatched.begin(); it != unmatched.end(); ) {
+            if (std::regex_search(line, g_regexes[*it])) it = unmatched.erase(it);
+            else ++it;
+        }
+    }
+    return unmatched.empty();
 }
 
 // ── Main search logic (process one file) ────────────────────────────────
@@ -691,7 +819,7 @@ static void process(std::string path) {
         return;
     }
 
-    std::ifstream inf(path, std::ios::binary);
+    std::ifstream inf(from_utf8(path), std::ios::binary);
     if (!inf) {
         std::cout << g_c.err << "Permission denied: "
                   << g_c.normal << path << "\n";
@@ -709,15 +837,15 @@ static void process(std::string path) {
                       << g_c.normal << path << "\n";
             return;
         }
+        // --dotall reads the whole file at once, so the gate is always whole-file.
+        bool present = true;
+        for (auto& rc : g_regexes)
+            if (!std::regex_search(data, rc)) { present = false; break; }
         if (g_args.negate) {
-            bool any = false;
-            for (auto& rc : g_regexes)
-                if (std::regex_search(data, rc)) { any = true; break; }
-            if (!any) prn_filename(path);
+            if (!present) prn_filename(path);
         } else if (g_args.filenames_only) {
-            for (auto& rc : g_regexes)
-                if (std::regex_search(data, rc)) { prn_filename(path); return; }
-        } else {
+            if (present) prn_filename(path);
+        } else if (present) {
             for (auto& rc : g_regexes) {
                 auto beg = std::sregex_iterator(data.begin(), data.end(), rc);
                 auto end = std::sregex_iterator();
@@ -755,15 +883,9 @@ static void process(std::string path) {
             // Reached EOF without proximity match
             if (g_args.negate) prn_filename(path);
         } else {
-            // OR mode
-            bool found = false;
-            while (std::getline(inf, line)) {
-                if (g_interrupted) return;
-                for (auto& rc : g_regexes) {
-                    if (std::regex_search(line, rc)) { found = true; break; }
-                }
-                if (found) break;
-            }
+            // Whole-file gate: every pattern must appear somewhere.
+            bool found = all_present_lines(inf);
+            if (g_interrupted) return;
             if (found && g_args.filenames_only) prn_filename(path);
             if (!found && g_args.negate)        prn_filename(path);
         }
@@ -771,74 +893,105 @@ static void process(std::string path) {
     }
 
     // ── full output mode ────────────────────────────────────────────
-    int num_matches = 0;
+    // Print matching lines plus -B/-A/-C context.  The gate scope is the only
+    // thing that varies: a sliding window with -P, otherwise the whole file.
+    int num_matches       = 0;
+    int last_printed_line = 0;
+    int after_remaining   = 0;
+    bool matched_one      = false;
+
+    // Print one line, inserting a ----- separator when it isn't contiguous with
+    // the previously printed line.  Separators only make sense when context was
+    // requested -- without -B/-A/-C every printed line is itself a match, so a
+    // separator between each pair would just be noise (and plain grep doesn't
+    // print them either).  Keeping this conditional is what makes "-P >= the
+    // file's length" produce byte-identical output to the whole-file gate.
+    auto emit = [&](int ln, const std::string& text) {
+        if (matched_one && ln > last_printed_line + 1 &&
+            (g_before_ctx || g_after_ctx))
+            std::cout << "-----\n";
+        prn(path, ln, text);
+        last_printed_line = ln;
+        matched_one = true;
+    };
 
     if (g_args.proximity >= 0) {
-        // ── proximity mode ──────────────────────────────────────────
+        // Gate scope is a sliding window.  Only matching lines inside a
+        // satisfied window get printed, each expanded by before/after context --
+        // the lines merely *between* two matches are not printed unless context
+        // reaches them.
         int buf_size = g_args.proximity + g_before_ctx + 1;
-        std::deque<std::pair<int, std::string>> prox_buf;
+        std::deque<std::tuple<int, std::string, bool>> prox_buf;
         std::map<int, int> last_match;
-        int last_printed_line = 0;
-        int after_remaining = 0;
-        bool matched_one = false;
 
         while (std::getline(inf, line)) {
             if (g_interrupted) return;
             ++line_number;
-            prox_buf.push_back({line_number, line});
+
+            bool any_hit = false;
+            for (int idx = 0; idx < (int)g_regexes.size(); ++idx)
+                if (std::regex_search(line, g_regexes[idx])) {
+                    last_match[idx] = line_number;
+                    any_hit = true;
+                }
+
+            prox_buf.push_back({line_number, line, any_hit});
             if ((int)prox_buf.size() > buf_size)
                 prox_buf.pop_front();
 
-            for (int idx = 0; idx < (int)g_regexes.size(); ++idx)
-                if (std::regex_search(line, g_regexes[idx]))
-                    last_match[idx] = line_number;
-
-            // expire
+            // expire matches that have fallen outside the proximity window
             for (auto it = last_match.begin(); it != last_match.end(); )
                 it = (line_number - it->second >= g_args.proximity)
                          ? last_match.erase(it) : std::next(it);
 
-            // after-context from a previous proximity match
-            if (after_remaining > 0 && line_number > last_printed_line) {
-                prn(path, line_number, line);
-                last_printed_line = line_number;
-                --after_remaining;
-            }
-            // proximity match
-            else if ((int)last_match.size() == (int)g_regexes.size()) {
+            if ((int)last_match.size() == (int)g_regexes.size()) {
                 ++num_matches;
                 if (g_args.max_count >= 0 && num_matches > g_args.max_count)
                     break;
-                int min_ln = last_match.begin()->second;
-                int max_ln = min_ln;
-                for (auto& [_, ln] : last_match) {
+                // The satisfied window runs from the earliest live match to the
+                // current line.  max(last_match) is always line_number: the set
+                // can only *become* complete on a line where a pattern matched.
+                int min_ln = line_number;
+                for (auto& [_, ln] : last_match)
                     min_ln = std::min(min_ln, ln);
-                    max_ln = std::max(max_ln, ln);
-                }
-                int start_ln = std::max(min_ln - g_before_ctx,
-                                        last_printed_line + 1);
-                if (matched_one && start_ln > last_printed_line + 1)
-                    std::cout << "-----\n";
-                for (auto& [bln, bline] : prox_buf) {
-                    if (bln >= start_ln && bln <= max_ln &&
-                        bln > last_printed_line) {
-                        prn(path, bln, bline);
-                    }
-                }
-                last_printed_line = std::max(last_printed_line, max_ln);
-                matched_one = true;
+
+                std::set<int> wanted;
+                for (auto& [bln, bline, bmatch] : prox_buf)
+                    if (bmatch && bln >= min_ln && bln <= line_number)
+                        for (int x = std::max(bln - g_before_ctx, 1);
+                             x <= bln + g_after_ctx; ++x)
+                            wanted.insert(x);
+
+                for (auto& [bln, bline, bmatch] : prox_buf)
+                    if (wanted.count(bln) && bln > last_printed_line)
+                        emit(bln, bline);
+
+                // after-context past the completing match is still unread,
+                // so stream it
                 after_remaining = g_after_ctx;
                 last_match.clear();
+            } else if (after_remaining > 0 && line_number > last_printed_line) {
+                emit(line_number, line);
+                --after_remaining;
             }
         }
     } else {
-        // ── normal (OR) mode ────────────────────────────────────────
+        // Gate scope is the whole file: require every pattern before printing
+        // anything.  Done as a separate pass rather than a giant proximity
+        // window so memory stays O(1).  With a single pattern the gate can't
+        // reject anything the per-line loop below wouldn't also skip, so the
+        // extra pass is pure cost and is skipped.
+        if (g_regexes.size() > 1) {
+            if (!all_present_lines(inf)) return;
+            if (g_interrupted) return;
+            inf.clear();
+            inf.seekg(0);
+            line_number = 0;
+        }
+
         if (g_before_ctx || g_after_ctx) {
             // Context-aware search
             std::deque<std::pair<int, std::string>> before_buf;
-            int last_printed_line = 0;
-            int after_remaining   = 0;
-            bool matched_one      = false;
 
             while (std::getline(inf, line)) {
                 if (g_interrupted) return;
@@ -855,26 +1008,19 @@ static void process(std::string path) {
 
                     int start = std::max(line_number - g_before_ctx,
                                          last_printed_line + 1);
-                    if (matched_one && start > last_printed_line + 1)
-                        std::cout << "-----\n";
 
                     // Print before-context lines not yet printed
-                    for (auto& [bln, bline] : before_buf) {
-                        if (bln >= start && bln > last_printed_line) {
-                            prn(path, bln, bline);
-                            last_printed_line = bln;
-                        }
-                    }
+                    for (auto& [bln, bline] : before_buf)
+                        if (bln >= start && bln > last_printed_line)
+                            emit(bln, bline);
+
                     // Print the match line itself
-                    if (line_number > last_printed_line) {
-                        prn(path, line_number, line);
-                        last_printed_line = line_number;
-                    }
+                    if (line_number > last_printed_line)
+                        emit(line_number, line);
+
                     after_remaining = g_after_ctx;
-                    matched_one = true;
                 } else if (after_remaining > 0) {
-                    prn(path, line_number, line);
-                    last_printed_line = line_number;
+                    emit(line_number, line);
                     --after_remaining;
                 }
 
@@ -884,7 +1030,7 @@ static void process(std::string path) {
                     before_buf.pop_front();
             }
         } else {
-            // Simple (no context)
+            // Simple (no context); emit() suppresses separators in this case
             while (std::getline(inf, line)) {
                 if (g_interrupted) return;
                 ++line_number;
@@ -895,7 +1041,7 @@ static void process(std::string path) {
                     ++num_matches;
                     if (g_args.max_count >= 0 && num_matches > g_args.max_count)
                         break;
-                    prn(path, line_number, line);
+                    emit(line_number, line);
                 }
             }
         }
@@ -906,7 +1052,7 @@ static void process(std::string path) {
 //  main
 // ═══════════════════════════════════════════════════════════════════════
 
-int main(int argc, char* argv[]) {
+static int run(int argc, char* argv[]) {
     std::signal(SIGINT, sigint_handler);
 
     if (argc == 1) { print_help(); return 0; }
@@ -917,14 +1063,14 @@ int main(int argc, char* argv[]) {
     std::string config_path;
     {
 #ifdef _WIN32
-        char exe[MAX_PATH]{};
-        GetModuleFileNameA(nullptr, exe, MAX_PATH);
-        config_path = (fs::path(exe).parent_path() / "grep.colors.conf").string();
+        wchar_t exe[MAX_PATH]{};
+        GetModuleFileNameW(nullptr, exe, MAX_PATH);
+        config_path = to_utf8(fs::path(exe).parent_path() / "grep.colors.conf");
 #else
         std::error_code ec;
         auto exepath = fs::read_symlink("/proc/self/exe", ec);
         if (ec) exepath = fs::absolute(argv[0], ec);
-        config_path = (exepath.parent_path() / "grep.colors.conf").string();
+        config_path = to_utf8(exepath.parent_path() / "grep.colors.conf");
 #endif
     }
 
@@ -1052,14 +1198,48 @@ int main(int argc, char* argv[]) {
     if (g_args.case_insensitive)
         flags |= std::regex_constants::icase;
 
-    for (auto& pat : all_patterns) {
+    for (size_t pi = 0; pi < all_patterns.size(); ++pi) {
+        const std::string& pat = all_patterns[pi];
         std::string effective = g_args.dotall ? make_dotall_pattern(pat) : pat;
         try {
             g_regexes.emplace_back(effective, flags);
         } catch (const std::regex_error& e) {
             std::cout << g_c.err << "Regex pattern error in '" << pat << "': "
                       << g_c.normal << e.what() << "\n";
+            // all_patterns[0] is the positional argument whenever one was given.  Only
+            // recommend -f when the argument demonstrably names files -- otherwise it's
+            // just a broken regex and telling the user to pass it as a filespec would be
+            // actively wrong.
+            if (pi == 0 && g_args.has_regex) {
+                long hits = filespec_hit_count(pat);
+                if (hits > 0) {
+                    print_slot_hint(pat, hits);
+                } else if (!g_args.expressions.empty()) {
+                    std::cout << g_c.err << "Note: " << g_c.normal
+                              << "all your patterns were given with -e, so this argument "
+                                 "was taken as the\n"
+                                 "search regex. If you meant it as a filename pattern, "
+                                 "pass it with -f.\n";
+                }
+            }
             return 1;
+        }
+    }
+
+    // The same trap, but for a filespec that happens to compile as a valid regex.  The
+    // ECMAScript engine accepts unknown escapes like \m as literals, so a Windows path
+    // compiles fine here and the search just runs with a nonsense pattern and reports
+    // nothing -- a silent wrong answer.  Warn when the positional names real files AND no
+    // filespec was supplied by any other means; that last condition is what keeps the
+    // documented `grep "class" -e "def" *.py` usage quiet, since there files is non-empty.
+    if (g_args.has_regex && !g_args.expressions.empty() &&
+        g_args.files.empty() && g_args.f_files.empty()) {
+        long hits = filespec_hit_count(g_args.regex);
+        if (hits > 0) {
+            std::cout << g_c.err << "Warning: " << g_c.normal << "'" << g_args.regex
+                      << "' is being used as the search regex.\n";
+            print_slot_hint(g_args.regex, hits);
+            std::cout << "\n";
         }
     }
 
@@ -1101,7 +1281,8 @@ int main(int argc, char* argv[]) {
     };
 
     try {
-        bool was_absolute_path = false;
+        // true once a path-qualified "dir/spec" filespec has been handled
+        bool had_dir_spec = false;
         std::vector<std::string> i_files2;
 
         if (g_args.recursive || g_args.dereference_recursive) {
@@ -1122,13 +1303,13 @@ int main(int argc, char* argv[]) {
                                 process(p);
                         });
                         g_sparts.clear();
-                        was_absolute_path = true;
+                        had_dir_spec = true;
                     }
                 } else {
                     i_files2.push_back(spec);
                 }
             }
-            if (!was_absolute_path && i_files2.empty())
+            if (!had_dir_spec && i_files2.empty())
                 i_files2.push_back("*");
 
             for (auto& ip : g_i_paths) {
@@ -1150,26 +1331,34 @@ int main(int argc, char* argv[]) {
                                   << g_c.normal << pf << "\n";
                     } else {
                         for (auto& fn : ld(dir)) {
-                            std::string fp = (fs::path(dir) / fn).string();
+                            fs::path fjoined = from_utf8(dir) / from_utf8(fn);
+                            std::string fp = to_utf8(fjoined);
                             std::error_code ec;
-                            if (!fs::is_directory(fp, ec) &&
+                            if (!fs::is_directory(fjoined, ec) &&
                                 fnmatch_match(spec, fn, g_case_sensitive_fn) &&
                                 !excluded_file(fn))
                                 process(fp);
                         }
+                        had_dir_spec = true;
                     }
                 } else {
                     i_files2.push_back(spec);
                 }
             }
-            if (i_files2.empty()) i_files2.push_back("*");
+            // Only fall back to "*" when no filespec at all was given.  A
+            // path-qualified filespec (dir/spec) has already been handled above,
+            // so defaulting to "*" here would additionally scan g_i_paths
+            // (default ".") and report unrelated files from the current directory.
+            if (!had_dir_spec && i_files2.empty())
+                i_files2.push_back("*");
 
             for (auto& ip : g_i_paths) {
                 if (g_interrupted) break;
                 for (auto& fn : ld(ip)) {
-                    std::string fp = (fs::path(ip) / fn).string();
+                    fs::path fjoined = from_utf8(ip) / from_utf8(fn);
+                    std::string fp = to_utf8(fjoined);
                     std::error_code ec;
-                    if (!fs::is_directory(fp, ec) &&
+                    if (!fs::is_directory(fjoined, ec) &&
                         match_file(fn, i_files2) && !excluded_file(fn))
                         process(fp);
                 }
@@ -1179,8 +1368,12 @@ int main(int argc, char* argv[]) {
         if (g_processed.empty() && !g_interrupted)
             std::cout << "No files matched your criteria.\n";
 
+    } catch (const std::exception& e) {
+        // Report rather than swallow. A silent catch-all here is what turned a
+        // filename-encoding throw into "grep found nothing", with no clue why.
+        std::cout << g_c.err << "Unexpected error: " << g_c.normal << e.what() << "\n";
     } catch (...) {
-        // Catch-all (unlikely in practice)
+        std::cout << g_c.err << "Unexpected error." << g_c.normal << "\n";
     }
 
     // ── Ctrl+C banner ───────────────────────────────────────────────
@@ -1204,3 +1397,30 @@ int main(int argc, char* argv[]) {
     std::cout.flush();
     return 0;
 }
+
+// ── Entry point ─────────────────────────────────────────────────────────
+// On Windows the real entry point is wmain, so arguments arrive as UTF-16 and
+// can be converted losslessly to the UTF-8 the rest of the program uses.  The
+// narrow argv of main() is encoded in the active ANSI code page, which silently
+// mangles any path or pattern containing characters that code page lacks.
+
+#ifdef _WIN32
+int wmain(int argc, wchar_t* wargv[]) {
+    ConsoleCodePage cp;
+
+    std::vector<std::string> args;
+    args.reserve((size_t)argc);
+    for (int i = 0; i < argc; ++i) args.push_back(wide_to_utf8(wargv[i]));
+
+    std::vector<char*> argv;
+    argv.reserve((size_t)argc + 1);
+    for (auto& a : args) argv.push_back(a.data());
+    argv.push_back(nullptr);
+
+    return run(argc, argv.data());
+}
+#else
+int main(int argc, char* argv[]) {
+    return run(argc, argv);
+}
+#endif
